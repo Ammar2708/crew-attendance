@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "498459802781",
+    "project_id": "crew-attendance-6d040",
+    "storage_bucket": "crew-attendance-6d040.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:498459802781:android:35abfa2a13b8f94b606874",
+        "android_client_info": {
+          "package_name": "com.crewattendance.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB5gSxiDiaQzsPJA-YQjhSbciy8cfB3jjQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
