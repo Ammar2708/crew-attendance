@@ -24,10 +24,16 @@ type NotificationContent = {
 };
 
 type ExpoPushTicket = {
+  id?: unknown;
   status?: unknown;
-  details?: {
-    error?: unknown;
-  };
+  message?: unknown;
+  details?: unknown;
+};
+
+type SendNotificationResult = {
+  sent: number;
+  failed: number;
+  ticketErrors: Record<string, number>;
 };
 
 function jsonResponse(body: JsonRecord, status = 200) {
@@ -69,13 +75,37 @@ function chunk<T>(values: T[], size: number) {
   return chunks;
 }
 
+function expoTicketError(ticket: ExpoPushTicket) {
+  return isRecord(ticket.details) ? stringValue(ticket.details.error) : null;
+}
+
+function logExpoTicket(ticket: ExpoPushTicket, batchIndex: number) {
+  const status = stringValue(ticket.status) ?? 'unknown';
+  const error = expoTicketError(ticket);
+  const logDetails = {
+    batchIndex,
+    status,
+    error,
+    message: stringValue(ticket.message),
+    ticket,
+  };
+
+  if (status === 'error') {
+    console.error('[push] Expo notification ticket failed.', logDetails);
+  } else if (status === 'ok') {
+    console.log('[push] Expo notification ticket accepted.', logDetails);
+  } else {
+    console.warn('[push] Expo notification ticket returned an unknown status.', logDetails);
+  }
+}
+
 async function deleteUnregisteredTokens(
   admin: ReturnType<typeof createClient>,
   tokens: string[],
   tickets: ExpoPushTicket[],
 ) {
   const unregisteredTokens = tokens.filter(
-    (_token, index) => tickets[index]?.details?.error === 'DeviceNotRegistered',
+    (_token, index) => expoTicketError(tickets[index] ?? {}) === 'DeviceNotRegistered',
   );
 
   if (unregisteredTokens.length === 0) return;
@@ -92,6 +122,8 @@ async function sendNotifications(
   content: NotificationContent,
 ) {
   let sent = 0;
+  let failed = 0;
+  const ticketErrors: Record<string, number> = {};
 
   for (const tokenBatch of chunk(tokens, MAX_EXPO_BATCH_SIZE)) {
     const messages = tokenBatch.map((to) => ({
@@ -113,11 +145,32 @@ async function sendNotifications(
       body: JSON.stringify(messages),
     });
 
-    if (!response.ok) {
-      throw new Error(`Expo Push Service returned ${response.status}.`);
+    const responseBody = await response.text();
+    console.log('[push] Expo push API response body.', {
+      httpStatus: response.status,
+      httpStatusText: response.statusText,
+      httpOk: response.ok,
+      body: responseBody,
+    });
+
+    let result: unknown = null;
+    if (responseBody) {
+      try {
+        result = JSON.parse(responseBody);
+      } catch (error) {
+        console.error('[push] Expo push API returned invalid JSON.', {
+          error: error instanceof Error ? error.message : String(error),
+          body: responseBody,
+        });
+      }
     }
 
-    const result: unknown = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        `Expo Push Service returned HTTP ${response.status} ${response.statusText}.`,
+      );
+    }
+
     const tickets =
       isRecord(result) && Array.isArray(result.data)
         ? (result.data as ExpoPushTicket[])
@@ -127,11 +180,22 @@ async function sendNotifications(
       throw new Error('Expo Push Service returned an unexpected ticket response.');
     }
 
+    tickets.forEach(logExpoTicket);
     await deleteUnregisteredTokens(admin, tokenBatch, tickets);
-    sent += tickets.filter((ticket) => ticket.status === 'ok').length;
+    const acceptedCount = tickets.filter((ticket) => ticket.status === 'ok').length;
+    sent += acceptedCount;
+    failed += tickets.length - acceptedCount;
+
+    for (const ticket of tickets) {
+      if (ticket.status === 'ok') continue;
+      const error = expoTicketError(ticket) ?? 'UnknownTicketError';
+      ticketErrors[error] = (ticketErrors[error] ?? 0) + 1;
+    }
   }
 
-  return sent;
+  const deliveryResult: SendNotificationResult = { sent, failed, ticketErrors };
+  console.log('[push] Expo push batch summary.', deliveryResult);
+  return deliveryResult;
 }
 
 async function getTokensForUsers(admin: ReturnType<typeof createClient>, userIds: string[]) {
@@ -280,8 +344,8 @@ Deno.serve(async (request) => {
       return jsonResponse({ sent: 0, reason: 'No registered push tokens.' });
     }
 
-    const sent = await sendNotifications(admin, tokens, notification.content);
-    return jsonResponse({ sent });
+    const deliveryResult = await sendNotifications(admin, tokens, notification.content);
+    return jsonResponse(deliveryResult);
   } catch (error) {
     console.error('Unable to send notification:', error);
     return jsonResponse({ error: 'Unable to send notification.' }, 500);

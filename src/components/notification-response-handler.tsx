@@ -6,6 +6,9 @@ const NOTIFICATION_ROUTES = new Set(['/dashboard', '/tasks']);
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
+    // Keep the legacy flag for Android and older native builds while the
+    // banner/list flags cover the current iOS presentation API.
+    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
     shouldShowBanner: true,
