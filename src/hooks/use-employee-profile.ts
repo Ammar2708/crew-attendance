@@ -6,7 +6,7 @@ import type { EmployeeProfile } from '@/types/tasks';
 function fetchEmployeeProfile(userId: string) {
   return supabase
     .from('employees')
-    .select('id, full_name, role')
+    .select('id, full_name, role, is_active')
     .eq('id', userId)
     .maybeSingle<EmployeeProfile>();
 }

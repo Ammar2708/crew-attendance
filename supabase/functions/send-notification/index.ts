@@ -241,7 +241,12 @@ async function attendanceNotification(
 
   const [employeeResult, ownersResult] = await Promise.all([
     admin.from('employees').select('full_name').eq('id', employeeId).maybeSingle(),
-    admin.from('employees').select('id').eq('role', 'owner').returns<{ id: string }[]>(),
+    admin
+      .from('employees')
+      .select('id')
+      .eq('role', 'owner')
+      .eq('is_active', true)
+      .returns<{ id: string }[]>(),
   ]);
 
   if (employeeResult.error) throw employeeResult.error;
@@ -275,6 +280,7 @@ async function taskNotification(
     .from('employees')
     .select('role')
     .eq('id', assignedTo)
+    .eq('is_active', true)
     .maybeSingle();
 
   if (error) throw error;

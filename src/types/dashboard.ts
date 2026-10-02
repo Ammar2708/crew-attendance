@@ -40,3 +40,10 @@ export type OwnerDashboardSummary = {
   pendingTaskCount: number;
   completedTaskCount: number;
 };
+
+export type RegisteredDevice = {
+  id: string;
+  platform: 'android' | 'ios';
+  created_at: string;
+  last_seen_at: string;
+};

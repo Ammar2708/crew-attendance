@@ -71,7 +71,7 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
   const [employeeResult, attendanceResult, tasksResult, photosResult] = await Promise.all([
     supabase
       .from('employees')
-      .select('id, full_name, role')
+      .select('id, full_name, role, is_active')
       .eq('id', employeeId)
       .maybeSingle<EmployeeProfile>(),
     supabase

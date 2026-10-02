@@ -6,12 +6,19 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
 };
 
-type CreateEmployeeBody = {
-  full_name?: unknown;
-  phone?: unknown;
-  email?: unknown;
-  password?: unknown;
+type RemoveEmployeeBody = {
+  employee_id?: unknown;
 };
+
+type EmployeeRecord = {
+  id: string;
+  full_name: string;
+  role: 'employee' | 'owner';
+  is_active: boolean;
+};
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function jsonResponse(body: Record<string, unknown>, status: number) {
   return new Response(JSON.stringify(body), {
@@ -20,16 +27,9 @@ function jsonResponse(body: Record<string, unknown>, status: number) {
   });
 }
 
-function requiredString(value: unknown) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   if (request.method !== 'POST') {
@@ -80,85 +80,83 @@ Deno.serve(async (request) => {
   }
 
   if (callerProfile?.role !== 'owner' || !callerProfile.is_active) {
-    return jsonResponse({ error: 'Only active owners can add employees.' }, 403);
+    return jsonResponse({ error: 'Only active owners can remove employees.' }, 403);
   }
 
-  let body: CreateEmployeeBody;
+  let body: RemoveEmployeeBody;
   try {
     const parsedBody: unknown = await request.json();
     if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
       return jsonResponse({ error: 'Request body must be a JSON object.' }, 400);
     }
-    body = parsedBody as CreateEmployeeBody;
+    body = parsedBody as RemoveEmployeeBody;
   } catch {
     return jsonResponse({ error: 'Request body must be valid JSON.' }, 400);
   }
 
-  const fullName = requiredString(body.full_name);
-  const phone = requiredString(body.phone);
-  const email = requiredString(body.email).toLowerCase();
-  const password = typeof body.password === 'string' ? body.password : '';
-
-  if (!fullName || !phone || !email || !password) {
-    return jsonResponse({ error: 'Full name, phone, email, and password are required.' }, 400);
+  const employeeId = typeof body.employee_id === 'string' ? body.employee_id.trim() : '';
+  if (!UUID_PATTERN.test(employeeId)) {
+    return jsonResponse({ error: 'A valid employee ID is required.' }, 400);
   }
 
-  if (fullName.length > 200 || phone.length > 50 || email.length > 320) {
-    return jsonResponse({ error: 'One or more fields are too long.' }, 400);
+  if (employeeId === caller.id) {
+    return jsonResponse({ error: 'Owners cannot remove their own account.' }, 400);
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return jsonResponse({ error: 'Enter a valid email address.' }, 400);
-  }
-
-  if (password.length < 8 || password.length > 72) {
-    return jsonResponse({ error: 'Password must be between 8 and 72 characters.' }, 400);
-  }
-
-  const { data: createUserData, error: createUserError } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: fullName, phone },
-  });
-
-  if (createUserError || !createUserData.user) {
-    console.error('Unable to create employee Auth user:', createUserError?.message);
-    return jsonResponse(
-      { error: createUserError?.message ?? 'Unable to create the employee account.' },
-      400,
-    );
-  }
-
-  const { error: employeeError } = await admin.from('employees').insert({
-    id: createUserData.user.id,
-    full_name: fullName,
-    phone,
-    role: 'employee',
-  });
+  const { data: employee, error: employeeError } = await admin
+    .from('employees')
+    .select('id, full_name, role, is_active')
+    .eq('id', employeeId)
+    .maybeSingle<EmployeeRecord>();
 
   if (employeeError) {
-    console.error('Unable to create employee profile:', employeeError.message);
+    console.error('Unable to load employee:', employeeError.message);
+    return jsonResponse({ error: 'Unable to load the employee.' }, 500);
+  }
 
-    const { error: rollbackError } = await admin.auth.admin.deleteUser(createUserData.user.id);
+  if (!employee) {
+    return jsonResponse({ error: 'Employee not found.' }, 404);
+  }
+
+  if (employee.role !== 'employee') {
+    return jsonResponse({ error: 'Owner accounts cannot be removed here.' }, 400);
+  }
+
+  const { error: banError } = await admin.auth.admin.updateUserById(employeeId, {
+    ban_duration: '876000h',
+  });
+
+  if (banError) {
+    console.error('Unable to disable employee Auth user:', banError.message);
+    return jsonResponse({ error: 'Unable to disable the employee login.' }, 500);
+  }
+
+  const { error: deactivateError } = await admin
+    .from('employees')
+    .update({ is_active: false })
+    .eq('id', employeeId)
+    .eq('role', 'employee');
+
+  if (deactivateError) {
+    console.error('Unable to deactivate employee profile:', deactivateError.message);
+    const { error: rollbackError } = await admin.auth.admin.updateUserById(employeeId, {
+      ban_duration: 'none',
+    });
     if (rollbackError) {
-      console.error('Unable to roll back employee Auth user:', rollbackError.message);
+      console.error('Unable to roll back employee Auth ban:', rollbackError.message);
     }
-
-    return jsonResponse({ error: 'Unable to create the employee profile.' }, 500);
+    return jsonResponse({ error: 'Unable to remove the employee.' }, 500);
   }
 
   return jsonResponse(
     {
       success: true,
       employee: {
-        id: createUserData.user.id,
-        full_name: fullName,
-        phone,
-        email,
-        role: 'employee',
+        id: employee.id,
+        full_name: employee.full_name,
+        is_active: false,
       },
     },
-    201,
+    200,
   );
 });

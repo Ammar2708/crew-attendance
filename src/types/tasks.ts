@@ -2,6 +2,7 @@ export type EmployeeProfile = {
   id: string;
   full_name: string;
   role: 'employee' | 'owner';
+  is_active: boolean;
 };
 
 export type Task = {

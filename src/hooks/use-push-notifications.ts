@@ -172,11 +172,18 @@ async function registerPushToken(
       if (insertError) throw insertError;
       updateDebugStatus({ supabaseInsert: 'succeeded', supabaseError: null });
     } else {
+      const { error: updateError } = await supabase
+        .from('push_tokens')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', existingToken.id)
+        .eq('user_id', userId);
+
+      if (updateError) throw updateError;
       updateDebugStatus({
-        supabaseInsert: 'not needed (already registered)',
+        supabaseInsert: 'succeeded',
         supabaseError: null,
       });
-      console.log('[push] Token is already registered; no insert is needed.', {
+      console.log('[push] Existing token activity was refreshed.', {
         tokenId: existingToken.id,
       });
     }

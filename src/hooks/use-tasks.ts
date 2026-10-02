@@ -91,7 +91,9 @@ function fetchOwnerData() {
   return Promise.all([
     supabase
       .from('employees')
-      .select('id, full_name, role')
+      .select('id, full_name, role, is_active')
+      .eq('role', 'employee')
+      .eq('is_active', true)
       .order('full_name')
       .returns<EmployeeProfile[]>(),
     supabase.from('tasks').select(TASK_FIELDS).order('created_at', { ascending: false }).returns<Task[]>(),

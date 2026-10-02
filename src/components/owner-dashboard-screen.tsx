@@ -1,10 +1,12 @@
 import { router, type Href } from 'expo-router';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LocationLink } from '@/components/location-link';
 import {
   LedgerPressable,
+  FolderToggle,
   StatusStamp,
   ledgerControls,
 } from '@/components/site-ledger-ui';
@@ -54,8 +56,8 @@ function EmployeeRow({ row }: { row: EmployeeDashboardRow }) {
           </Text>
           <Text style={styles.employeeId}>{row.employee.id.slice(0, 8)}</Text>
         </View>
-        <StatusStamp tone={row.isPresent ? 'positive' : 'negative'}>
-          {row.isPresent ? 'Present' : 'Absent'}
+        <StatusStamp tone={row.employee.is_active ? (row.isPresent ? 'positive' : 'negative') : 'neutral'}>
+          {row.employee.is_active ? (row.isPresent ? 'Present' : 'Absent') : 'Inactive'}
         </StatusStamp>
       </View>
 
@@ -107,6 +109,16 @@ function EmployeeRow({ row }: { row: EmployeeDashboardRow }) {
 
 export function OwnerDashboardScreen() {
   const { rows, summary, isLoading, errorMessage, reload } = useOwnerDashboard();
+  const [rosterView, setRosterView] = useState<'active' | 'inactive'>('active');
+  const activeRows = useMemo(
+    () => rows.filter((row) => row.employee.is_active),
+    [rows],
+  );
+  const inactiveRows = useMemo(
+    () => rows.filter((row) => !row.employee.is_active),
+    [rows],
+  );
+  const visibleRows = rosterView === 'active' ? activeRows : inactiveRows;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -133,8 +145,8 @@ export function OwnerDashboardScreen() {
         </View>
       ) : (
         <FlatList
-          contentContainerStyle={[styles.list, rows.length === 0 && styles.emptyList]}
-          data={rows}
+          contentContainerStyle={[styles.list, visibleRows.length === 0 && styles.emptyList]}
+          data={visibleRows}
           keyExtractor={(row) => row.employee.id}
           ListHeaderComponent={
             <View>
@@ -160,11 +172,27 @@ export function OwnerDashboardScreen() {
               <Summary summary={summary} />
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Employees</Text>
-                <Text style={styles.count}>{rows.length} entries</Text>
+                <Text style={styles.count}>{visibleRows.length} entries</Text>
+              </View>
+              <View style={styles.rosterToggle}>
+                <FolderToggle
+                  onChange={setRosterView}
+                  options={[
+                    { value: 'active', label: `Active (${activeRows.length})` },
+                    { value: 'inactive', label: `Inactive (${inactiveRows.length})` },
+                  ]}
+                  value={rosterView}
+                />
               </View>
             </View>
           }
-          ListEmptyComponent={<Text style={styles.empty}>No employees found.</Text>}
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {rosterView === 'active'
+                ? 'No active employees found.'
+                : 'No inactive employees found.'}
+            </Text>
+          }
           renderItem={({ item }) => <EmployeeRow row={item} />}
         />
       )}
@@ -225,6 +253,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 20 },
   count: { color: Palette.steel, fontFamily: Fonts.sansMedium, fontSize: 12 },
+  rosterToggle: { width: '100%', maxWidth: 420, marginVertical: 16 },
   employeeRow: {
     backgroundColor: Palette.surface,
     borderBottomColor: Palette.line,

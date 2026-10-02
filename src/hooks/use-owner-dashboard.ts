@@ -7,6 +7,7 @@ import type {
   DashboardTask,
   EmployeeDashboardRow,
   OwnerDashboardSummary,
+  RegisteredDevice,
 } from '@/types/dashboard';
 import type { EmployeeProfile } from '@/types/tasks';
 
@@ -20,7 +21,7 @@ const ATTENDANCE_FIELDS = `
   clock_out_lat,
   clock_out_lng,
   date,
-  employee:employees!attendance_employee_id_fkey(id, full_name, role)
+  employee:employees!attendance_employee_id_fkey(id, full_name, role, is_active)
 `;
 
 function getLocalDate(date: Date) {
@@ -49,7 +50,8 @@ function fetchOwnerDashboardData() {
   return Promise.all([
     supabase
       .from('employees')
-      .select('id, full_name, role')
+      .select('id, full_name, role, is_active')
+      .eq('role', 'employee')
       .order('full_name')
       .returns<EmployeeProfile[]>(),
     supabase
@@ -161,15 +163,19 @@ export function useOwnerDashboard() {
     });
   }, [attendance, employees, tasks]);
 
-  const summary = useMemo<OwnerDashboardSummary>(
-    () => ({
-      totalEmployees: employees.length,
-      clockedInCount: rows.filter((row) => row.isClockedIn).length,
-      pendingTaskCount: tasks.filter((task) => task.status === 'pending').length,
-      completedTaskCount: tasks.filter((task) => task.status === 'completed').length,
-    }),
-    [employees.length, rows, tasks],
-  );
+  const summary = useMemo<OwnerDashboardSummary>(() => {
+    const activeEmployeeIds = new Set(
+      employees.filter((employee) => employee.is_active).map((employee) => employee.id),
+    );
+    const activeTasks = tasks.filter((task) => activeEmployeeIds.has(task.assigned_to));
+
+    return {
+      totalEmployees: activeEmployeeIds.size,
+      clockedInCount: rows.filter((row) => row.employee.is_active && row.isClockedIn).length,
+      pendingTaskCount: activeTasks.filter((task) => task.status === 'pending').length,
+      completedTaskCount: activeTasks.filter((task) => task.status === 'completed').length,
+    };
+  }, [employees, rows, tasks]);
 
   return { rows, summary, isLoading, errorMessage, reload };
 }
@@ -180,7 +186,7 @@ function fetchEmployeeToday(employeeId: string) {
   return Promise.all([
     supabase
       .from('employees')
-      .select('id, full_name, role')
+      .select('id, full_name, role, is_active')
       .eq('id', employeeId)
       .maybeSingle<EmployeeProfile>(),
     supabase
@@ -190,24 +196,33 @@ function fetchEmployeeToday(employeeId: string) {
       .eq('date', date)
       .order('clock_in_time', { ascending: true })
       .returns<DashboardAttendance[]>(),
+    supabase
+      .from('push_tokens')
+      .select('id, platform, created_at, last_seen_at')
+      .eq('user_id', employeeId)
+      .order('last_seen_at', { ascending: false })
+      .returns<RegisteredDevice[]>(),
   ]);
 }
 
 export function useEmployeeTodayAttendance(employeeId: string) {
   const [employee, setEmployee] = useState<EmployeeProfile | null>(null);
   const [attendance, setAttendance] = useState<DashboardAttendance[]>([]);
+  const [devices, setDevices] = useState<RegisteredDevice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
-    const [employeeResult, attendanceResult] = await fetchEmployeeToday(employeeId);
+    const [employeeResult, attendanceResult, devicesResult] = await fetchEmployeeToday(employeeId);
     setEmployee(employeeResult.data);
     setAttendance(attendanceResult.data ?? []);
+    setDevices(devicesResult.data ?? []);
     setErrorMessage(
       employeeResult.error?.message ??
         attendanceResult.error?.message ??
+        devicesResult.error?.message ??
         (employeeResult.data ? null : 'Employee not found.'),
     );
     setIsLoading(false);
@@ -217,17 +232,21 @@ export function useEmployeeTodayAttendance(employeeId: string) {
     useCallback(() => {
       let isCancelled = false;
 
-      void fetchEmployeeToday(employeeId).then(([employeeResult, attendanceResult]) => {
-        if (isCancelled) return;
-        setEmployee(employeeResult.data);
-        setAttendance(attendanceResult.data ?? []);
-        setErrorMessage(
-          employeeResult.error?.message ??
-            attendanceResult.error?.message ??
-            (employeeResult.data ? null : 'Employee not found.'),
-        );
-        setIsLoading(false);
-      });
+      void fetchEmployeeToday(employeeId).then(
+        ([employeeResult, attendanceResult, devicesResult]) => {
+          if (isCancelled) return;
+          setEmployee(employeeResult.data);
+          setAttendance(attendanceResult.data ?? []);
+          setDevices(devicesResult.data ?? []);
+          setErrorMessage(
+            employeeResult.error?.message ??
+              attendanceResult.error?.message ??
+              devicesResult.error?.message ??
+              (employeeResult.data ? null : 'Employee not found.'),
+          );
+          setIsLoading(false);
+        },
+      );
 
       return () => {
         isCancelled = true;
@@ -235,5 +254,5 @@ export function useEmployeeTodayAttendance(employeeId: string) {
     }, [employeeId]),
   );
 
-  return { employee, attendance, isLoading, errorMessage, reload: load };
+  return { employee, attendance, devices, isLoading, errorMessage, reload: load };
 }
