@@ -1,0 +1,11 @@
+project_id = "crew-attendance"
+
+# Browser preflight requests do not include a user JWT. Authentication and the
+# owner role are verified inside the function before any privileged operation.
+[functions.create-employee]
+verify_jwt = false
+
+# Database Webhooks authenticate this endpoint with x-webhook-secret instead
+# of a user JWT. The function compares it with the WEBHOOK_SECRET secret.
+[functions.send-notification]
+verify_jwt = false

@@ -1,55 +1,37 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import '@/global.css';
 
-import { Platform } from 'react-native';
-
-export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-  },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-  },
+/** Shared Site Ledger tokens for web, iOS, and Android. */
+export const Palette = {
+  ink: '#1A2029',
+  paper: '#EDEAE2',
+  steel: '#4A5568',
+  line: '#C9C2B4',
+  safety: '#F5A623',
+  onSite: '#3F7D58',
+  alert: '#B4472A',
+  surface: '#F5F3ED',
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+const ledgerColors = {
+  text: Palette.ink,
+  background: Palette.paper,
+  backgroundElement: Palette.surface,
+  backgroundSelected: Palette.safety,
+  textSecondary: Palette.steel,
+} as const;
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+// Compatibility aliases for the starter components that still use useTheme.
+export const Colors = { light: ledgerColors, dark: ledgerColors } as const;
+export type ThemeColor = keyof typeof ledgerColors;
+
+export const Fonts = {
+  sans: 'IBMPlexSans_400Regular',
+  sansMedium: 'IBMPlexSans_500Medium',
+  sansSemiBold: 'IBMPlexSans_600SemiBold',
+  sansBold: 'IBMPlexSans_700Bold',
+  mono: 'IBMPlexMono_400Regular',
+  monoSemiBold: 'IBMPlexMono_600SemiBold',
+} as const;
 
 export const Spacing = {
   half: 2,
@@ -58,8 +40,27 @@ export const Spacing = {
   three: 16,
   four: 24,
   five: 32,
-  six: 64,
+  six: 48,
+  seven: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const Radius = { control: 3, stamp: 2 } as const;
+
+export const Layout = {
+  pagePadding: 20,
+  desktopPagePadding: 32,
+  narrow: 560,
+  content: 920,
+  wide: 1180,
+} as const;
+
+export const Motion = {
+  pressIn: 80,
+  pressOut: 120,
+  toggle: 180,
+  stamp: 220,
+  screen: 200,
+} as const;
+
+export const BottomTabInset = 0;
+export const MaxContentWidth = Layout.content;
