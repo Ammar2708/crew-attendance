@@ -13,7 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ledgerControls } from '@/components/site-ledger-ui';
 import { Fonts, Palette } from '@/constants/theme';
-import { AUTH_CALLBACK_URL, supabase } from '@/lib/supabase';
+import {
+  AUTH_CALLBACK_URL,
+  supabase,
+  supabaseConfigurationError,
+} from '@/lib/supabase';
 
 type LoginScreenProps = {
   initialSuccessMessage?: string;
@@ -30,6 +34,11 @@ export function LoginScreen({ initialSuccessMessage }: LoginScreenProps) {
   );
 
   async function handleLogin() {
+    if (supabaseConfigurationError) {
+      setErrorMessage(supabaseConfigurationError.message);
+      return;
+    }
+
     if (!email.trim() || !password) {
       setErrorMessage('Enter your email and password.');
       return;
@@ -51,6 +60,11 @@ export function LoginScreen({ initialSuccessMessage }: LoginScreenProps) {
   }
 
   async function handlePasswordReset() {
+    if (supabaseConfigurationError) {
+      setErrorMessage(supabaseConfigurationError.message);
+      return;
+    }
+
     if (!email.trim()) {
       setErrorMessage('Enter your email address.');
       return;
