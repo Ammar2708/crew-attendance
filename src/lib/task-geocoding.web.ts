@@ -40,7 +40,3 @@ export async function geocodeTaskAddress(address: string): Promise<AttendanceCoo
   resultCache.set(cacheKey, coordinate);
   return coordinate;
 }
-
-export async function reverseGeocodeTaskLocation(_coordinate: AttendanceCoordinates) {
-  return null;
-}

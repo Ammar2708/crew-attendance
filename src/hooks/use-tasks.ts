@@ -100,7 +100,7 @@ function fetchOwnerData() {
     supabase
       .from('employees')
       .select('id, full_name, role, is_active')
-      .eq('role', 'employee')
+      .in('role', ['employee', 'owner'])
       .eq('is_active', true)
       .order('full_name')
       .returns<EmployeeProfile[]>(),

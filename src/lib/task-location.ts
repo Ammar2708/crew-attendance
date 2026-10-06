@@ -23,7 +23,3 @@ export function distanceInKm(from: AttendanceCoordinates, to: AttendanceCoordina
     Math.atan2(Math.sqrt(clampedHaversine), Math.sqrt(1 - clampedHaversine))
   );
 }
-
-export function coordinateLabel(coordinate: AttendanceCoordinates) {
-  return `${coordinate.latitude.toFixed(5)}, ${coordinate.longitude.toFixed(5)}`;
-}

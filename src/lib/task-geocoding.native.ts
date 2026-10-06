@@ -23,15 +23,3 @@ export async function geocodeTaskAddress(address: string): Promise<AttendanceCoo
 
   return { latitude: result.latitude, longitude: result.longitude };
 }
-
-export async function reverseGeocodeTaskLocation(coordinate: AttendanceCoordinates) {
-  await ensureAndroidGeocodingPermission();
-  const [result] = await Location.reverseGeocodeAsync(coordinate);
-  if (!result) return null;
-  if (result.formattedAddress) return result.formattedAddress;
-
-  const street = [result.streetNumber, result.street].filter(Boolean).join(' ');
-  return [result.name !== street ? result.name : null, street, result.city, result.region, result.postalCode]
-    .filter(Boolean)
-    .join(', ');
-}

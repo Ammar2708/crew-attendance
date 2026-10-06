@@ -13,12 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmployeePicker } from '@/components/employee-picker';
 import { StatusStamp, ledgerControls } from '@/components/site-ledger-ui';
-import { TaskLocationMap } from '@/components/task-location-map';
 import { Fonts, Layout, Palette } from '@/constants/theme';
 import { useOwnerTasks } from '@/hooks/use-tasks';
 import { supabase } from '@/lib/supabase';
-import { geocodeTaskAddress, reverseGeocodeTaskLocation } from '@/lib/task-geocoding';
-import { coordinateLabel, distanceInKm } from '@/lib/task-location';
+import { geocodeTaskAddress } from '@/lib/task-geocoding';
+import { distanceInKm } from '@/lib/task-location';
 import type { AttendanceCoordinates } from '@/types/attendance';
 
 function isValidDate(value: string) {
@@ -57,7 +56,7 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
     () => new Map(employees.map((employee) => [employee.id, employee.full_name])),
     [employees],
   );
-  const employeeMapLocations = useMemo(() => {
+  const clockedInEmployeeCoordinates = useMemo(() => {
     const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
     return clockedInLocations.flatMap((location) => {
       const employee = employeeById.get(location.employee_id);
@@ -78,11 +77,11 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
     const distances = new Map<string, number>();
     if (!taskLocation) return distances;
 
-    for (const employee of employeeMapLocations) {
+    for (const employee of clockedInEmployeeCoordinates) {
       distances.set(employee.id, distanceInKm(taskLocation, employee.coordinate));
     }
     return distances;
-  }, [employeeMapLocations, taskLocation]);
+  }, [clockedInEmployeeCoordinates, taskLocation]);
   const sortedEmployees = useMemo(
     () =>
       [...employees].sort((first, second) => {
@@ -124,21 +123,6 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
       }
     } finally {
       if (requestId === locationRequestId.current) setIsGeocoding(false);
-    }
-  }
-
-  async function selectMapLocation(coordinate: AttendanceCoordinates) {
-    const requestId = ++locationRequestId.current;
-    setTaskLocation(coordinate);
-    setSiteAddress(`Dropped pin (${coordinateLabel(coordinate)})`);
-    setFormError(null);
-    setSuccessMessage(null);
-
-    try {
-      const address = await reverseGeocodeTaskLocation(coordinate);
-      if (requestId === locationRequestId.current && address) setSiteAddress(address);
-    } catch {
-      // Coordinates remain valid even when an optional reverse-geocoding lookup fails.
     }
   }
 
@@ -245,24 +229,6 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
               <Text style={styles.geocodeButtonText}>Find address on map</Text>
             )}
           </Pressable>
-
-          <View style={styles.mapHeader}>
-            <Text style={styles.label}>Team locations</Text>
-            <Text style={styles.clockedInCount}>{employeeMapLocations.length} clocked in</Text>
-          </View>
-          <TaskLocationMap
-            employeeLocations={employeeMapLocations}
-            onSelectTaskLocation={(coordinate) => void selectMapLocation(coordinate)}
-            taskLocation={taskLocation}
-          />
-          <Text style={styles.mapHint}>
-            {taskLocation
-              ? `Task location set at ${coordinateLabel(taskLocation)}.`
-              : 'Enter and find an address, or tap the native map to set the task location.'}
-          </Text>
-          <Text style={styles.privacyCaption}>
-            Employee positions are as of their last clock-in — this is not live tracking.
-          </Text>
 
           <Text style={styles.label}>Employee</Text>
           <EmployeePicker
@@ -371,10 +337,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   geocodeButtonText: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 14 },
-  mapHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  clockedInCount: { color: Palette.onSite, fontFamily: Fonts.monoSemiBold, fontSize: 12, marginTop: 18, marginBottom: 8 },
-  mapHint: { color: Palette.ink, fontFamily: Fonts.sansMedium, fontSize: 12, lineHeight: 18, marginTop: 9 },
-  privacyCaption: { color: Palette.steel, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18, marginTop: 3 },
   pickerHint: { color: Palette.steel, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18, marginTop: 7 },
   error: { color: Palette.alert, fontFamily: Fonts.sans, fontSize: 14, lineHeight: 20, marginTop: 14 },
   success: { color: Palette.onSite, fontFamily: Fonts.sansMedium, fontSize: 14, lineHeight: 20, marginTop: 14 },
