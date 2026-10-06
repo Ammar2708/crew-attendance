@@ -2,10 +2,18 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
-import type { EmployeeProfile, Task } from '@/types/tasks';
+import type { ClockedInEmployeeLocation, EmployeeProfile, Task } from '@/types/tasks';
 
 const TASK_FIELDS =
   'id, title, site_address, assigned_to, assigned_by, status, due_date, created_at';
+
+function getLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
 
 function fetchEmployeeTasks(userId: string) {
   return supabase
@@ -97,20 +105,40 @@ function fetchOwnerData() {
       .order('full_name')
       .returns<EmployeeProfile[]>(),
     supabase.from('tasks').select(TASK_FIELDS).order('created_at', { ascending: false }).returns<Task[]>(),
+    supabase
+      .from('attendance')
+      .select('employee_id, clock_in_time, clock_in_lat, clock_in_lng')
+      .eq('date', getLocalDate(new Date()))
+      .is('clock_out_time', null)
+      .order('clock_in_time', { ascending: false })
+      .returns<ClockedInEmployeeLocation[]>(),
   ]);
 }
 
 export function useOwnerTasks() {
   const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [clockedInLocations, setClockedInLocations] = useState<ClockedInEmployeeLocation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const applyResults = useCallback(
-    ([employeesResult, tasksResult]: Awaited<ReturnType<typeof fetchOwnerData>>) => {
+    ([employeesResult, tasksResult, attendanceResult]: Awaited<ReturnType<typeof fetchOwnerData>>) => {
       setEmployees(employeesResult.data ?? []);
       setTasks(tasksResult.data ?? []);
-      setErrorMessage(employeesResult.error?.message ?? tasksResult.error?.message ?? null);
+      const latestLocations = new Map<string, ClockedInEmployeeLocation>();
+      for (const record of attendanceResult.data ?? []) {
+        if (!latestLocations.has(record.employee_id)) {
+          latestLocations.set(record.employee_id, record);
+        }
+      }
+      setClockedInLocations([...latestLocations.values()]);
+      setErrorMessage(
+        employeesResult.error?.message ??
+          tasksResult.error?.message ??
+          attendanceResult.error?.message ??
+          null,
+      );
       setIsLoading(false);
     },
     [],
@@ -136,5 +164,5 @@ export function useOwnerTasks() {
     }, [applyResults]),
   );
 
-  return { employees, tasks, isLoading, errorMessage, reload };
+  return { employees, tasks, clockedInLocations, isLoading, errorMessage, reload };
 }

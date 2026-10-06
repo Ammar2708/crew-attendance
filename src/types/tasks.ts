@@ -5,6 +5,13 @@ export type EmployeeProfile = {
   is_active: boolean;
 };
 
+export type ClockedInEmployeeLocation = {
+  employee_id: string;
+  clock_in_time: string;
+  clock_in_lat: number;
+  clock_in_lng: number;
+};
+
 export type Task = {
   id: string;
   title: string;

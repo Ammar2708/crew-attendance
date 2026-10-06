@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -13,9 +13,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmployeePicker } from '@/components/employee-picker';
 import { StatusStamp, ledgerControls } from '@/components/site-ledger-ui';
+import { TaskLocationMap } from '@/components/task-location-map';
 import { Fonts, Layout, Palette } from '@/constants/theme';
 import { useOwnerTasks } from '@/hooks/use-tasks';
 import { supabase } from '@/lib/supabase';
+import { geocodeTaskAddress, reverseGeocodeTaskLocation } from '@/lib/task-geocoding';
+import { coordinateLabel, distanceInKm } from '@/lib/task-location';
+import type { AttendanceCoordinates } from '@/types/attendance';
 
 function isValidDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -31,23 +35,116 @@ function isValidDate(value: string) {
 }
 
 export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
-  const { employees, tasks, isLoading, errorMessage: loadError, reload } = useOwnerTasks();
+  const {
+    employees,
+    tasks,
+    clockedInLocations,
+    isLoading,
+    errorMessage: loadError,
+    reload,
+  } = useOwnerTasks();
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [title, setTitle] = useState('');
   const [siteAddress, setSiteAddress] = useState('');
+  const [taskLocation, setTaskLocation] = useState<AttendanceCoordinates | null>(null);
   const [dueDate, setDueDate] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGeocoding, setIsGeocoding] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const locationRequestId = useRef(0);
   const employeeNames = useMemo(
     () => new Map(employees.map((employee) => [employee.id, employee.full_name])),
     [employees],
   );
-  const effectiveEmployeeId = selectedEmployeeId || employees[0]?.id || '';
+  const employeeMapLocations = useMemo(() => {
+    const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
+    return clockedInLocations.flatMap((location) => {
+      const employee = employeeById.get(location.employee_id);
+      if (!employee) return [];
+      return [
+        {
+          id: employee.id,
+          name: employee.full_name,
+          coordinate: {
+            latitude: location.clock_in_lat,
+            longitude: location.clock_in_lng,
+          },
+        },
+      ];
+    });
+  }, [clockedInLocations, employees]);
+  const distancesByEmployeeId = useMemo(() => {
+    const distances = new Map<string, number>();
+    if (!taskLocation) return distances;
+
+    for (const employee of employeeMapLocations) {
+      distances.set(employee.id, distanceInKm(taskLocation, employee.coordinate));
+    }
+    return distances;
+  }, [employeeMapLocations, taskLocation]);
+  const sortedEmployees = useMemo(
+    () =>
+      [...employees].sort((first, second) => {
+        const firstDistance = distancesByEmployeeId.get(first.id);
+        const secondDistance = distancesByEmployeeId.get(second.id);
+        if (firstDistance != null && secondDistance != null) return firstDistance - secondDistance;
+        if (firstDistance != null) return -1;
+        if (secondDistance != null) return 1;
+        return first.full_name.localeCompare(second.full_name);
+      }),
+    [distancesByEmployeeId, employees],
+  );
+  const effectiveEmployeeId = selectedEmployeeId || sortedEmployees[0]?.id || '';
+
+  function changeSiteAddress(value: string) {
+    locationRequestId.current += 1;
+    setSiteAddress(value);
+    setTaskLocation(null);
+    setSuccessMessage(null);
+  }
+
+  async function findAddress() {
+    const address = siteAddress.trim();
+    if (!address) {
+      setFormError('Enter a site address to look up.');
+      return;
+    }
+
+    const requestId = ++locationRequestId.current;
+    setIsGeocoding(true);
+    setFormError(null);
+    setSuccessMessage(null);
+    try {
+      const coordinate = await geocodeTaskAddress(address);
+      if (requestId === locationRequestId.current) setTaskLocation(coordinate);
+    } catch (error) {
+      if (requestId === locationRequestId.current) {
+        setFormError(error instanceof Error ? error.message : 'Unable to look up that address.');
+      }
+    } finally {
+      if (requestId === locationRequestId.current) setIsGeocoding(false);
+    }
+  }
+
+  async function selectMapLocation(coordinate: AttendanceCoordinates) {
+    const requestId = ++locationRequestId.current;
+    setTaskLocation(coordinate);
+    setSiteAddress(`Dropped pin (${coordinateLabel(coordinate)})`);
+    setFormError(null);
+    setSuccessMessage(null);
+
+    try {
+      const address = await reverseGeocodeTaskLocation(coordinate);
+      if (requestId === locationRequestId.current && address) setSiteAddress(address);
+    } catch {
+      // Coordinates remain valid even when an optional reverse-geocoding lookup fails.
+    }
+  }
 
   async function submitTask() {
-    if (!effectiveEmployeeId || !title.trim() || !siteAddress.trim()) {
-      setFormError('Select an employee and enter a title and site address.');
+    if (!effectiveEmployeeId || !title.trim() || !siteAddress.trim() || !taskLocation) {
+      setFormError('Select an employee, enter a title, and set the task location.');
       return;
     }
 
@@ -61,14 +158,28 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
     setFormError(null);
     setSuccessMessage(null);
 
-    const { error } = await supabase.from('tasks').insert({
+    const task = {
       assigned_to: effectiveEmployeeId,
       assigned_by: ownerId,
       title: title.trim(),
       site_address: siteAddress.trim(),
       due_date: normalizedDueDate || null,
       status: 'pending',
+    };
+    const { error: locationInsertError } = await supabase.from('tasks').insert({
+      ...task,
+      site_lat: taskLocation.latitude,
+      site_lng: taskLocation.longitude,
     });
+
+    // Keep assignment available while the nullable coordinate migration is rolling out.
+    // The human-readable/reverse-geocoded site address still preserves the selected point.
+    const isMissingLocationColumn =
+      locationInsertError?.code === 'PGRST204' &&
+      /site_(lat|lng)/.test(locationInsertError.message);
+    const error = isMissingLocationColumn
+      ? (await supabase.from('tasks').insert(task)).error
+      : locationInsertError;
 
     if (error) {
       setFormError(error.message);
@@ -78,6 +189,7 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
 
     setTitle('');
     setSiteAddress('');
+    setTaskLocation(null);
     setDueDate('');
     setSuccessMessage('Task assigned successfully.');
     setIsSubmitting(false);
@@ -98,13 +210,6 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
         <View style={styles.formCard}>
           <Text style={styles.sectionTitle}>New task</Text>
 
-          <Text style={styles.label}>Employee</Text>
-          <EmployeePicker
-            employees={employees}
-            onChange={setSelectedEmployeeId}
-            value={effectiveEmployeeId}
-          />
-
           <Text style={styles.label}>Task title</Text>
           <TextInput
             editable={!isSubmitting}
@@ -119,12 +224,58 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
           <TextInput
             editable={!isSubmitting}
             multiline
-            onChangeText={setSiteAddress}
-            placeholder="123 Main Street"
+            onChangeText={changeSiteAddress}
+            placeholder="123 Main Street, city"
             placeholderTextColor={Palette.steel}
             style={[styles.input, styles.multilineInput]}
             value={siteAddress}
           />
+          <Pressable
+            accessibilityRole="button"
+            disabled={isGeocoding || !siteAddress.trim()}
+            onPress={() => void findAddress()}
+            style={({ pressed }) => [
+              styles.geocodeButton,
+              (isGeocoding || !siteAddress.trim()) && styles.disabled,
+              pressed && styles.pressed,
+            ]}>
+            {isGeocoding ? (
+              <ActivityIndicator color={Palette.ink} size="small" />
+            ) : (
+              <Text style={styles.geocodeButtonText}>Find address on map</Text>
+            )}
+          </Pressable>
+
+          <View style={styles.mapHeader}>
+            <Text style={styles.label}>Team locations</Text>
+            <Text style={styles.clockedInCount}>{employeeMapLocations.length} clocked in</Text>
+          </View>
+          <TaskLocationMap
+            employeeLocations={employeeMapLocations}
+            onSelectTaskLocation={(coordinate) => void selectMapLocation(coordinate)}
+            taskLocation={taskLocation}
+          />
+          <Text style={styles.mapHint}>
+            {taskLocation
+              ? `Task location set at ${coordinateLabel(taskLocation)}.`
+              : 'Enter and find an address, or tap the native map to set the task location.'}
+          </Text>
+          <Text style={styles.privacyCaption}>
+            Employee positions are as of their last clock-in — this is not live tracking.
+          </Text>
+
+          <Text style={styles.label}>Employee</Text>
+          <EmployeePicker
+            distancesByEmployeeId={distancesByEmployeeId}
+            employees={sortedEmployees}
+            onChange={setSelectedEmployeeId}
+            value={effectiveEmployeeId}
+          />
+          <Text style={styles.pickerHint}>
+            {taskLocation
+              ? 'Clocked-in employees are sorted nearest first. Others remain available for manual selection.'
+              : 'Set the task location to compare straight-line distances.'}
+          </Text>
 
           <Text style={styles.label}>Due date (optional)</Text>
           <TextInput
@@ -214,6 +365,17 @@ const styles = StyleSheet.create({
   input: { ...ledgerControls.input },
   dateInput: { fontFamily: Fonts.mono },
   multilineInput: { minHeight: 88, paddingTop: 13, textAlignVertical: 'top' },
+  geocodeButton: {
+    ...ledgerControls.secondary,
+    minHeight: 44,
+    marginTop: 10,
+  },
+  geocodeButtonText: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 14 },
+  mapHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  clockedInCount: { color: Palette.onSite, fontFamily: Fonts.monoSemiBold, fontSize: 12, marginTop: 18, marginBottom: 8 },
+  mapHint: { color: Palette.ink, fontFamily: Fonts.sansMedium, fontSize: 12, lineHeight: 18, marginTop: 9 },
+  privacyCaption: { color: Palette.steel, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18, marginTop: 3 },
+  pickerHint: { color: Palette.steel, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18, marginTop: 7 },
   error: { color: Palette.alert, fontFamily: Fonts.sans, fontSize: 14, lineHeight: 20, marginTop: 14 },
   success: { color: Palette.onSite, fontFamily: Fonts.sansMedium, fontSize: 14, lineHeight: 20, marginTop: 14 },
   submitButton: { ...ledgerControls.primary, marginTop: 22 },

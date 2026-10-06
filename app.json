@@ -37,7 +37,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Crew Attendance to use your location when you clock in or out."
+          "locationWhenInUsePermission": "Allow Crew Attendance to use location services for clock-in, clock-out, and task address lookup."
         }
       ],
       [

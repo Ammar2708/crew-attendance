@@ -7,6 +7,10 @@
       "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_JU46MCdSu_ugct0QcXvn2g_B_OuQBt2"
     }
   },
+  "env": {
+    "EXPO_PUBLIC_SUPABASE_URL": "https://yaakzuswhwlspmzzoouj.supabase.co",
+    "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_JU46MCdSu_ugct0QcXvn2g_B_OuQBt2"
+  },
   "outputDirectory": "dist",
   "rewrites": [
     {
