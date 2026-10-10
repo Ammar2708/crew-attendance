@@ -16,6 +16,12 @@ import { StatusStamp, ledgerControls } from '@/components/site-ledger-ui';
 import { Fonts, Layout, Palette } from '@/constants/theme';
 import { useEmployeeTodayAttendance } from '@/hooks/use-owner-dashboard';
 import { supabase } from '@/lib/supabase';
+import {
+  BUSINESS_TIMEZONE,
+  calculateWorkHours,
+  getBusinessDateKey,
+  formatBusinessDateKey,
+} from '@/lib/work-hours';
 import type { DashboardAttendance } from '@/types/dashboard';
 
 type RemoveEmployeeResponse = {
@@ -29,6 +35,7 @@ function formatTime(value: string | null) {
   return new Date(value).toLocaleTimeString([], {
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: BUSINESS_TIMEZONE,
   });
 }
 
@@ -39,6 +46,7 @@ function formatDateTime(value: string) {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: BUSINESS_TIMEZONE,
   });
 }
 
@@ -84,6 +92,7 @@ export function EmployeeAttendanceDetailScreen({ employeeId }: { employeeId: str
   const [isConfirmingRemoval, setIsConfirmingRemoval] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const todayHours = calculateWorkHours(attendance);
 
   async function removeEmployee() {
     if (!employee || !employee.is_active || isRemoving) return;
@@ -164,13 +173,24 @@ export function EmployeeAttendanceDetailScreen({ employeeId }: { employeeId: str
                   ) : null}
                 </View>
                 <Text style={styles.date}>
-                  {new Date().toLocaleDateString([], {
+                  {formatBusinessDateKey(getBusinessDateKey(new Date()), {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                     year: 'numeric',
                   })}
                 </Text>
+              </View>
+
+              <View style={styles.hoursSummary}>
+                <View style={styles.hoursCard}>
+                  <Text style={styles.hoursValue}>{todayHours.totalHours.toFixed(1)}</Text>
+                  <Text style={styles.hoursLabel}>Today&apos;s total hours</Text>
+                </View>
+                <View style={styles.hoursCard}>
+                  <Text style={styles.hoursValue}>{todayHours.overtimeHours.toFixed(1)}</Text>
+                  <Text style={styles.hoursLabel}>Today&apos;s overtime hours</Text>
+                </View>
               </View>
 
               <View style={styles.devicesSection}>
@@ -290,6 +310,23 @@ const styles = StyleSheet.create({
   employeeIdentity: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
   employeeName: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 26 },
   date: { color: Palette.steel, fontFamily: Fonts.mono, fontSize: 13, marginTop: 5 },
+  hoursSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    borderTopColor: Palette.line,
+    borderTopWidth: 1,
+    marginTop: 24,
+  },
+  hoursCard: {
+    minWidth: 150,
+    flex: 1,
+    backgroundColor: Palette.surface,
+    borderBottomColor: Palette.line,
+    borderBottomWidth: 1,
+    padding: 15,
+  },
+  hoursValue: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 24 },
+  hoursLabel: { color: Palette.steel, fontFamily: Fonts.sansMedium, fontSize: 12, marginTop: 4 },
   removeButton: {
     ...ledgerControls.secondary,
     minHeight: 40,

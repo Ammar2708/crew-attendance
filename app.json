@@ -49,14 +49,6 @@
         }
       ],
       [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow Crew Attendance to choose task completion photos from your photo library.",
-          "cameraPermission": "Allow Crew Attendance to take task completion photos.",
-          "microphonePermission": false
-        }
-      ],
-      [
         "expo-notifications",
         {
           "color": "#F5A623",

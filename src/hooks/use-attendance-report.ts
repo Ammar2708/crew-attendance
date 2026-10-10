@@ -2,6 +2,19 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
+import {
+  addDaysToDateKey,
+  BUSINESS_TIMEZONE,
+  businessDateTimeToDate,
+  calculateWorkHours,
+  formatBusinessDateKey,
+  getBusinessDateKey,
+  getDateKeyDayOfWeek,
+  isLateArrival,
+  LATE_GRACE_MINUTES,
+  WORK_END_HOUR,
+  WORK_START_HOUR,
+} from '@/lib/work-hours';
 import type {
   AttendanceReport,
   ReportAttendance,
@@ -13,13 +26,10 @@ import type {
 } from '@/types/reports';
 import type { EmployeeProfile } from '@/types/tasks';
 
-// Change this constant if the expected start time changes.
-export const LATE_ARRIVAL_HOUR = 9;
+export { BUSINESS_TIMEZONE, LATE_GRACE_MINUTES, WORK_END_HOUR, WORK_START_HOUR };
 const PHOTO_URL_EXPIRY_SECONDS = 60 * 60;
 
 type ReportRange = {
-  start: Date;
-  end: Date;
   startDate: string;
   endDate: string;
   taskStart: string;
@@ -28,41 +38,22 @@ type ReportRange = {
   key: string;
 };
 
-function toLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 function getReportRange(view: ReportView): ReportRange {
-  const end = new Date();
-  end.setHours(0, 0, 0, 0);
-
-  const start = new Date(end);
-  if (view === 'weekly') {
-    start.setDate(start.getDate() - 6);
-  } else {
-    start.setDate(1);
-  }
-
-  const taskEnd = new Date(end);
-  taskEnd.setDate(taskEnd.getDate() + 1);
-
-  const startDate = toLocalDate(start);
-  const endDate = toLocalDate(end);
+  const endDate = getBusinessDateKey(new Date());
+  const startDate =
+    view === 'weekly' ? addDaysToDateKey(endDate, -6) : `${endDate.slice(0, 8)}01`;
+  const taskStart = businessDateTimeToDate(startDate, 0);
+  const taskEnd = businessDateTimeToDate(addDaysToDateKey(endDate, 1), 0);
 
   return {
-    start,
-    end,
     startDate,
     endDate,
-    taskStart: start.toISOString(),
+    taskStart: taskStart.toISOString(),
     taskEnd: taskEnd.toISOString(),
     label:
       view === 'weekly'
-        ? `${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
-        : end.toLocaleDateString([], { month: 'long', year: 'numeric' }),
+        ? `${formatBusinessDateKey(startDate, { month: 'short', day: 'numeric' })} – ${formatBusinessDateKey(endDate, { month: 'short', day: 'numeric', year: 'numeric' })}`
+        : formatBusinessDateKey(endDate, { month: 'long', year: 'numeric' }),
     key: `${view}:${startDate}:${endDate}`,
   };
 }
@@ -107,6 +98,7 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
         task_id,
         photo_url,
         source,
+        captured_at,
         uploaded_at,
         task:tasks!inner(id, title, site_address, assigned_to, status, created_at)
       `)
@@ -114,7 +106,7 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
       .eq('task.status', 'completed')
       .gte('task.created_at', range.taskStart)
       .lt('task.created_at', range.taskEnd)
-      .order('uploaded_at', { ascending: false })
+      .order('captured_at', { ascending: false })
       .returns<ReportTaskPhoto[]>(),
   ]);
 
@@ -127,21 +119,6 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
       : { data: [], error: null };
 
   return { employeeResult, attendanceResult, tasksResult, photosResult, signedPhotosResult };
-}
-
-function isLateArrival(clockInTime: string) {
-  const clockIn = new Date(clockInTime);
-  const lateThreshold = new Date(clockIn);
-  lateThreshold.setHours(LATE_ARRIVAL_HOUR, 0, 0, 0);
-  return clockIn.getTime() > lateThreshold.getTime();
-}
-
-function getHoursWorked(records: ReportAttendance[]) {
-  return records.reduce((total, record) => {
-    if (!record.clock_out_time) return total;
-    const duration = new Date(record.clock_out_time).getTime() - new Date(record.clock_in_time).getTime();
-    return duration > 0 ? total + duration / 3_600_000 : total;
-  }, 0);
 }
 
 function buildReport(
@@ -161,14 +138,14 @@ function buildReport(
   }
 
   const days: ReportDay[] = [];
-  const cursor = new Date(range.start);
+  let date = range.startDate;
 
-  while (cursor <= range.end) {
-    const date = toLocalDate(cursor);
+  while (date <= range.endDate) {
     const records = attendanceByDate.get(date) ?? [];
     const firstRecord = records[0] ?? null;
     const lastRecord = records[records.length - 1] ?? null;
-    const dayOfWeek = cursor.getDay();
+    const dayOfWeek = getDateKeyDayOfWeek(date);
+    const hours = calculateWorkHours(records);
 
     days.push({
       date,
@@ -182,13 +159,13 @@ function buildReport(
         lastRecord?.clock_out_lat != null && lastRecord.clock_out_lng != null
           ? { latitude: lastRecord.clock_out_lat, longitude: lastRecord.clock_out_lng }
           : null,
-      hoursWorked: getHoursWorked(records),
+      ...hours,
       isPresent: records.length > 0,
       isLate: firstRecord ? isLateArrival(firstRecord.clock_in_time) : false,
       isWeekday: dayOfWeek >= 1 && dayOfWeek <= 5,
     });
 
-    cursor.setDate(cursor.getDate() + 1);
+    date = addDaysToDateKey(date, 1);
   }
 
   const totalCompleted = tasks.filter((task) => task.status === 'completed').length;
@@ -213,6 +190,7 @@ function buildReport(
           id: photo.id,
           url: signedPhotoUrls.get(photo.photo_url) ?? null,
           source: photo.source,
+          capturedAt: photo.captured_at,
         })),
       };
     });
@@ -221,7 +199,9 @@ function buildReport(
     employee,
     periodLabel: range.label,
     daysPresent: days.filter((day) => day.isPresent).length,
-    totalHoursWorked: days.reduce((total, day) => total + day.hoursWorked, 0),
+    totalHours: days.reduce((total, day) => total + day.totalHours, 0),
+    regularHours: days.reduce((total, day) => total + day.regularHours, 0),
+    overtimeHours: days.reduce((total, day) => total + day.overtimeHours, 0),
     lateArrivalCount: days.filter((day) => day.isLate).length,
     absenceCount: days.filter((day) => day.isWeekday && !day.isPresent).length,
     totalAssigned: tasks.length,

@@ -2,6 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
+import { getBusinessDateKey, getBusinessDayRange } from '@/lib/work-hours';
 import type {
   DashboardAttendance,
   DashboardTask,
@@ -24,21 +25,12 @@ const ATTENDANCE_FIELDS = `
   employee:employees!attendance_employee_id_fkey(id, full_name, role, is_active)
 `;
 
-function getLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 function getTodayRange() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  const date = getBusinessDateKey(new Date());
+  const { start, end } = getBusinessDayRange(date);
 
   return {
-    date: getLocalDate(start),
+    date,
     start: start.toISOString(),
     end: end.toISOString(),
   };

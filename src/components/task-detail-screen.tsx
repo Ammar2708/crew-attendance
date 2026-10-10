@@ -1,11 +1,11 @@
 import { CameraView, type CameraCapturedPicture, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,30 +28,15 @@ type TaskDetailScreenProps = {
   userId: string;
 };
 
-type PhotoSource = 'camera' | 'gallery';
-
 type SelectedPhoto = {
   id: string;
   uri: string;
-  source: PhotoSource;
-  fileName?: string | null;
-  mimeType?: string | null;
+  capturedAt: string;
   format?: CameraCapturedPicture['format'];
 };
 
 type PermissionIssue = {
-  source: PhotoSource;
   canAskAgain: boolean;
-};
-
-const IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
-  'image/avif': 'avif',
-  'image/gif': 'gif',
-  'image/heic': 'heic',
-  'image/heif': 'heif',
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
 };
 
 const IMAGE_MIME_TYPE_BY_EXTENSION: Record<string, string> = {
@@ -70,29 +55,22 @@ function createSelectedPhotoId() {
 }
 
 function getUploadMetadata(photo: SelectedPhoto) {
-  const mimeType = photo.mimeType?.toLowerCase();
-  const fileExtension = photo.fileName?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
   const uriExtension = photo.uri.split(/[?#]/, 1)[0].match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
   const extension =
-    (mimeType && IMAGE_EXTENSION_BY_MIME_TYPE[mimeType]) ||
     photo.format ||
-    (fileExtension && IMAGE_MIME_TYPE_BY_EXTENSION[fileExtension] ? fileExtension : null) ||
     (uriExtension && IMAGE_MIME_TYPE_BY_EXTENSION[uriExtension] ? uriExtension : null) ||
     'jpg';
 
   return {
     extension,
-    contentType: mimeType?.startsWith('image/')
-      ? mimeType
-      : (IMAGE_MIME_TYPE_BY_EXTENSION[extension] ?? 'image/jpeg'),
+    contentType: IMAGE_MIME_TYPE_BY_EXTENSION[extension] ?? 'image/jpeg',
   };
 }
 
 export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
   const { task, isLoading, errorMessage: taskError, markCompleted } = useTask(taskId, userId);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [mediaLibraryPermission, requestMediaLibraryPermission] =
-    ImagePicker.useMediaLibraryPermissions();
+  const isWeb = Platform.OS === 'web';
   const cameraRef = useRef<CameraView>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
@@ -108,56 +86,22 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    if (isWeb) {
+      setErrorMessage('Use the mobile app to take completion photos.');
+      return;
+    }
+
     const response = cameraPermission?.granted
       ? cameraPermission
       : await requestCameraPermission();
     if (!response.granted) {
-      setPermissionIssue({ source: 'camera', canAskAgain: response.canAskAgain });
+      setPermissionIssue({ canAskAgain: response.canAskAgain });
       return;
     }
 
     setPermissionIssue(null);
     setIsCameraReady(false);
     setIsCameraOpen(true);
-  }
-
-  async function chooseFromGallery() {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    try {
-      const response = mediaLibraryPermission?.granted
-        ? mediaLibraryPermission
-        : await requestMediaLibraryPermission();
-      if (!response.granted) {
-        setPermissionIssue({ source: 'gallery', canAskAgain: response.canAskAgain });
-        return;
-      }
-
-      setPermissionIssue(null);
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsMultipleSelection: true,
-        quality: 0.8,
-      });
-
-      if (!result.canceled) {
-        setPhotos((current) => [
-          ...current,
-          ...result.assets.map((asset) => ({
-            id: createSelectedPhotoId(),
-            uri: asset.uri,
-            source: 'gallery' as const,
-            fileName: asset.fileName,
-            mimeType: asset.mimeType,
-          })),
-        ]);
-      }
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Unable to choose a photo from the library.',
-      );
-    }
   }
 
   async function capturePhoto() {
@@ -167,13 +111,14 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
     setErrorMessage(null);
 
     try {
+      const capturedAt = new Date().toISOString();
       const capturedPhoto = await cameraRef.current.takePictureAsync({ quality: 0.8 });
       setPhotos((current) => [
         ...current,
         {
           id: createSelectedPhotoId(),
           uri: capturedPhoto.uri,
-          source: 'camera',
+          capturedAt,
           format: capturedPhoto.format,
         },
       ]);
@@ -190,18 +135,23 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
   }
 
   async function submitPhotos() {
-    if (photos.length === 0 || !task || isSubmitting) return;
+    if (isWeb || photos.length === 0 || !task || isSubmitting) return;
 
     setIsSubmitting(true);
     setErrorMessage(null);
     const uploadedPaths: string[] = [];
 
     try {
-      const photoRows: { task_id: string; photo_url: string; source: PhotoSource }[] = [];
+      const photoRows: {
+        task_id: string;
+        photo_url: string;
+        source: 'camera';
+        captured_at: string;
+      }[] = [];
 
       for (const photo of photos) {
         const fileResponse = await fetch(photo.uri);
-        if (!fileResponse.ok) throw new Error('Unable to read one of the selected photos.');
+        if (!fileResponse.ok) throw new Error('Unable to read one of the captured photos.');
 
         const { extension, contentType } = getUploadMetadata(photo);
         const filename = `task-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`;
@@ -215,7 +165,12 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
 
         if (uploadError) throw uploadError;
         uploadedPaths.push(uploadData.path);
-        photoRows.push({ task_id: task.id, photo_url: uploadData.path, source: photo.source });
+        photoRows.push({
+          task_id: task.id,
+          photo_url: uploadData.path,
+          source: 'camera',
+          captured_at: photo.capturedAt,
+        });
       }
 
       const { error: photoError } = await supabase.from('task_photos').insert(photoRows);
@@ -325,9 +280,6 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
                   {photos.map((photo, index) => (
                     <View key={photo.id} style={styles.photoTile}>
                       <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
-                      <Text style={styles.photoSourceBadge}>
-                        {photo.source === 'camera' ? 'Camera' : 'Gallery'}
-                      </Text>
                       <Pressable
                         accessibilityLabel={`Remove photo ${index + 1}`}
                         accessibilityRole="button"
@@ -349,12 +301,6 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
                     onPress={() => void openCamera()}
                     style={[styles.primaryButton, styles.addPhotoButton]}>
                     <Text style={styles.primaryButtonText}>Take photo</Text>
-                  </Pressable>
-                  <Pressable
-                    disabled={isSubmitting}
-                    onPress={() => void chooseFromGallery()}
-                    style={[styles.secondaryButton, styles.addPhotoButton]}>
-                    <Text style={styles.secondaryButtonText}>Choose from gallery</Text>
                   </Pressable>
                 </View>
                 <Pressable
@@ -379,6 +325,12 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
                 <CheckmarkDraw animate={justCompleted} />
                 <Text style={styles.completedMessageText}>This task is completed.</Text>
               </View>
+            ) : isWeb ? (
+              <View style={styles.webPhotoNotice}>
+                <Text style={styles.webPhotoNoticeText}>
+                  Use the mobile app to take completion photos.
+                </Text>
+              </View>
             ) : (
               <View style={styles.photoSourceActions}>
                 <Pressable
@@ -386,28 +338,17 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
                   style={[styles.primaryButton, styles.photoSourceButton]}>
                   <Text style={styles.primaryButtonText}>Take photo</Text>
                 </Pressable>
-                <Pressable
-                  onPress={() => void chooseFromGallery()}
-                  style={[styles.secondaryButton, styles.photoSourceButton]}>
-                  <Text style={styles.secondaryButtonText}>Choose from gallery</Text>
-                </Pressable>
               </View>
             )}
 
             {permissionIssue ? (
               <View style={styles.notice}>
                 <Text style={styles.error}>
-                  {permissionIssue.source === 'camera'
-                    ? 'Camera permission is required to photograph this task.'
-                    : 'Photo library permission is required to choose a task photo.'}
+                  Camera permission is required to photograph this task.
                 </Text>
                 <Pressable
                   onPress={() =>
-                    void (permissionIssue.canAskAgain
-                      ? permissionIssue.source === 'camera'
-                        ? openCamera()
-                        : chooseFromGallery()
-                      : Linking.openSettings())
+                    void (permissionIssue.canAskAgain ? openCamera() : Linking.openSettings())
                   }>
                   <Text style={styles.settingsLink}>
                     {permissionIssue.canAskAgain ? 'Try again' : 'Open settings'}
@@ -457,8 +398,6 @@ const styles = StyleSheet.create({
   dueDate: { color: Palette.ink, fontFamily: Fonts.mono, fontSize: 15, lineHeight: 24, marginTop: 5 },
   primaryButton: { ...ledgerControls.primary, flex: 1, marginTop: 28 },
   primaryButtonText: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 16 },
-  secondaryButton: { ...ledgerControls.secondary, flex: 1, marginTop: 28 },
-  secondaryButtonText: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 16 },
   photoSourceActions: { gap: 12, marginTop: 28 },
   photoSourceButton: { flex: 0, marginTop: 0 },
   previewSection: { width: '100%', alignSelf: 'center', marginTop: 24 },
@@ -479,18 +418,6 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.line,
   },
   photoThumbnail: { width: '100%', height: '100%' },
-  photoSourceBadge: {
-    position: 'absolute',
-    left: 5,
-    bottom: 5,
-    color: Palette.surface,
-    backgroundColor: `${Palette.ink}CC`,
-    borderRadius: 3,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    fontFamily: Fonts.sansSemiBold,
-    fontSize: 9,
-  },
   removePhotoButton: {
     position: 'absolute',
     top: 5,
@@ -511,6 +438,20 @@ const styles = StyleSheet.create({
   addPhotoActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
   addPhotoButton: { marginTop: 0 },
   submitButton: { flex: 0, marginTop: 12 },
+  webPhotoNotice: {
+    backgroundColor: Palette.paper,
+    borderColor: Palette.line,
+    borderWidth: 1,
+    marginTop: 28,
+    padding: 16,
+  },
+  webPhotoNoticeText: {
+    color: Palette.steel,
+    fontFamily: Fonts.sansMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
   notice: { alignItems: 'center', gap: 8, marginTop: 18 },
   error: { color: Palette.alert, fontFamily: Fonts.sans, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 16 },
   success: { color: Palette.onSite, fontFamily: Fonts.sansMedium, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 16 },

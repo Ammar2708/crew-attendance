@@ -20,7 +20,13 @@ import {
   ledgerControls,
 } from '@/components/site-ledger-ui';
 import { Fonts, Layout, Palette, Radius } from '@/constants/theme';
-import { LATE_ARRIVAL_HOUR, useAttendanceReport } from '@/hooks/use-attendance-report';
+import { useAttendanceReport } from '@/hooks/use-attendance-report';
+import {
+  BUSINESS_TIMEZONE,
+  formatBusinessDateKey,
+  LATE_GRACE_MINUTES,
+  WORK_START_HOUR,
+} from '@/lib/work-hours';
 import type {
   AttendanceReport,
   ReportCompletedTask,
@@ -29,14 +35,22 @@ import type {
   ReportView,
 } from '@/types/reports';
 
-function parseLocalDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
-
 function formatTime(value: string | null) {
   if (!value) return '—';
-  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return new Date(value).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: BUSINESS_TIMEZONE,
+  });
+}
+
+function formatPhotoTime(value: string, includeDate: boolean) {
+  return new Date(value).toLocaleString([], {
+    ...(includeDate ? { month: 'short' as const, day: 'numeric' as const } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: BUSINESS_TIMEZONE,
+  });
 }
 
 function ViewToggle({ value, onChange }: { value: ReportView; onChange: (view: ReportView) => void }) {
@@ -55,7 +69,9 @@ function ViewToggle({ value, onChange }: { value: ReportView; onChange: (view: R
 function Summary({ report }: { report: AttendanceReport }) {
   const attendanceMetrics = [
     { label: 'Days present', value: String(report.daysPresent) },
-    { label: 'Hours worked', value: report.totalHoursWorked.toFixed(1) },
+    { label: 'Total hours', value: report.totalHours.toFixed(1) },
+    { label: 'Regular hours', value: report.regularHours.toFixed(1) },
+    { label: 'Overtime hours', value: report.overtimeHours.toFixed(1) },
     { label: 'Late arrivals', value: String(report.lateArrivalCount) },
     { label: 'Absences', value: String(report.absenceCount) },
   ];
@@ -93,9 +109,11 @@ function Summary({ report }: { report: AttendanceReport }) {
 
 function CompletedTasksSection({
   tasks,
+  view,
   onOpenPhoto,
 }: {
   tasks: ReportCompletedTask[];
+  view: ReportView;
   onOpenPhoto: (task: ReportCompletedTask, photo: ReportCompletedTaskPhoto) => void;
 }) {
   return (
@@ -134,9 +152,12 @@ function CompletedTasksSection({
                           <Text style={styles.photoUnavailableText}>Photo unavailable</Text>
                         </View>
                       )}
-                      <Text style={styles.photoSourceLabel}>
-                        {photo.source === 'camera' ? 'Camera' : 'Gallery'}
+                      <Text style={styles.photoTimeLabel}>
+                        {formatPhotoTime(photo.capturedAt, view === 'monthly')}
                       </Text>
+                      {photo.source === 'gallery' ? (
+                        <Text style={styles.photoSourceLabel}>Gallery</Text>
+                      ) : null}
                     </View>
                   ))}
                 </View>
@@ -185,13 +206,18 @@ function PhotoLightbox({
             </Pressable>
           </View>
           {activePhoto?.photo.url ? (
-            <Image
-              accessibilityLabel={`Completion photo for ${activePhoto.taskTitle}`}
-              contentFit="contain"
-              source={{ uri: activePhoto.photo.url }}
-              style={styles.lightboxImage}
-              transition={150}
-            />
+            <>
+              <Image
+                accessibilityLabel={`Completion photo for ${activePhoto.taskTitle}`}
+                contentFit="contain"
+                source={{ uri: activePhoto.photo.url }}
+                style={styles.lightboxImage}
+                transition={150}
+              />
+              <Text style={styles.lightboxPhotoTime}>
+                {formatPhotoTime(activePhoto.photo.capturedAt, true)}
+              </Text>
+            </>
           ) : null}
         </SafeAreaView>
       </View>
@@ -214,10 +240,10 @@ function DayRow({ day }: { day: ReportDay }) {
       <View style={styles.dayHeader}>
         <View>
           <Text style={styles.dayName}>
-            {parseLocalDate(day.date).toLocaleDateString([], { weekday: 'long' })}
+            {formatBusinessDateKey(day.date, { weekday: 'long' })}
           </Text>
           <Text style={styles.dayDate}>
-            {parseLocalDate(day.date).toLocaleDateString([], {
+            {formatBusinessDateKey(day.date, {
               month: 'short',
               day: 'numeric',
               year: 'numeric',
@@ -251,8 +277,16 @@ function DayRow({ day }: { day: ReportDay }) {
           </View>
         </View>
         <View style={styles.dayDetail}>
-          <Text style={styles.detailLabel}>Hours</Text>
-          <Text style={styles.detailValue}>{day.hoursWorked.toFixed(1)}</Text>
+          <Text style={styles.detailLabel}>Total hours</Text>
+          <Text style={styles.detailValue}>{day.totalHours.toFixed(1)}</Text>
+        </View>
+        <View style={styles.dayDetail}>
+          <Text style={styles.detailLabel}>Regular hours</Text>
+          <Text style={styles.detailValue}>{day.regularHours.toFixed(1)}</Text>
+        </View>
+        <View style={styles.dayDetail}>
+          <Text style={styles.detailLabel}>Overtime hours</Text>
+          <Text style={styles.detailValue}>{day.overtimeHours.toFixed(1)}</Text>
         </View>
       </View>
     </View>
@@ -297,13 +331,16 @@ export function AttendanceReportScreen({ employeeId }: { employeeId: string }) {
               <Text style={styles.employeeName}>{report.employee.full_name}</Text>
               <Text style={styles.period}>{report.periodLabel}</Text>
               <Text style={styles.reportNote}>
-                Late means after {LATE_ARRIVAL_HOUR}:00 AM. Monthly reports are month to date.
+                Late means after {WORK_START_HOUR}:00 AM
+                {LATE_GRACE_MINUTES > 0 ? ` plus ${LATE_GRACE_MINUTES} minutes` : ''}. Monthly
+                reports are month to date. Times use {BUSINESS_TIMEZONE}.
               </Text>
               <ViewToggle onChange={setView} value={view} />
               <Summary report={report} />
               <CompletedTasksSection
                 onOpenPhoto={(task, photo) => setActivePhoto({ taskTitle: task.title, photo })}
                 tasks={report.completedTasks}
+                view={view}
               />
               <Text style={styles.breakdownTitle}>Day-by-day</Text>
             </View>
@@ -378,6 +415,7 @@ const styles = StyleSheet.create({
   thumbnailButton: { borderRadius: Radius.control, overflow: 'hidden' },
   thumbnailColumn: { alignItems: 'center', gap: 5 },
   thumbnail: { width: 84, height: 84, backgroundColor: Palette.line },
+  photoTimeLabel: { color: Palette.ink, fontFamily: Fonts.mono, fontSize: 10 },
   photoSourceLabel: { color: Palette.steel, fontFamily: Fonts.sansMedium, fontSize: 10 },
   photoUnavailable: {
     width: 84,
@@ -401,8 +439,8 @@ const styles = StyleSheet.create({
   dayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   dayName: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 16 },
   dayDate: { color: Palette.steel, fontFamily: Fonts.mono, fontSize: 12, marginTop: 3 },
-  dayDetails: { flexDirection: 'row', gap: 12, marginTop: 16 },
-  dayDetail: { flex: 1 },
+  dayDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 16 },
+  dayDetail: { minWidth: 110, flexGrow: 1, flexBasis: '17%' },
   detailLabel: { color: Palette.steel, fontFamily: Fonts.sansMedium, fontSize: 11 },
   detailValue: { color: Palette.ink, fontFamily: Fonts.monoSemiBold, fontSize: 14, marginTop: 4 },
   timeAndLocation: {
@@ -433,5 +471,12 @@ const styles = StyleSheet.create({
   closeButton: { ...ledgerControls.secondary, minHeight: 38, paddingHorizontal: 14 },
   closeButtonText: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 14 },
   lightboxImage: { flex: 1, margin: 20 },
+  lightboxPhotoTime: {
+    color: Palette.surface,
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingBottom: 20,
+  },
   pressed: { opacity: 0.65 },
 });
