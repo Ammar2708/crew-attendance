@@ -4,21 +4,19 @@
     "slug": "crew-attendance",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/prime-build-icon.png",
     "scheme": "crewattendance",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/prime-build-icon.png",
       "bundleIdentifier": "com.crewattendance.app"
     },
     "android": {
       "package": "com.crewattendance.app",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#8F8C87",
+        "foregroundImage": "./assets/images/prime-build-icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -30,7 +28,7 @@
     "web": {
       "output": "static",
       "name": "Prime Build Work Limited",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/prime-build-icon.png"
     },
     "plugins": [
       "expo-router",
