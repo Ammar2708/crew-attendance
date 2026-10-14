@@ -85,7 +85,7 @@ export function AttendanceHomeScreen({ session }: AttendanceHomeScreenProps) {
       <View style={styles.shell}>
         <View style={styles.header}>
           <View style={styles.headerCopy}>
-            <Text style={styles.brand}>Crew attendance</Text>
+            <Text style={styles.brand}>Prime Build Work Limited</Text>
             <Text numberOfLines={1} style={styles.email}>
               {session.user.email}
             </Text>

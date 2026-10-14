@@ -6,6 +6,7 @@ import { IBMPlexSans_600SemiBold } from '@expo-google-fonts/ibm-plex-sans/600Sem
 import { IBMPlexSans_700Bold } from '@expo-google-fonts/ibm-plex-sans/700Bold';
 import { useFonts } from 'expo-font';
 import { DefaultTheme, ThemeProvider } from 'expo-router';
+import Head from 'expo-router/head';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
@@ -31,21 +32,28 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <ThemeProvider
-      value={{
-        ...DefaultTheme,
-        colors: {
-          ...DefaultTheme.colors,
-          primary: Palette.safety,
-          background: Palette.paper,
-          card: Palette.surface,
-          text: Palette.ink,
-          border: Palette.line,
-          notification: Palette.alert,
-        },
-      }}>
-      <NotificationResponseHandler />
-      <NavigationStack />
-    </ThemeProvider>
+    <>
+      <Head>
+        <title>Prime Build Work Limited</title>
+        <meta content="Prime Build Work Limited" name="application-name" />
+        <meta content="Prime Build Work Limited" name="apple-mobile-web-app-title" />
+      </Head>
+      <ThemeProvider
+        value={{
+          ...DefaultTheme,
+          colors: {
+            ...DefaultTheme.colors,
+            primary: Palette.safety,
+            background: Palette.paper,
+            card: Palette.surface,
+            text: Palette.ink,
+            border: Palette.line,
+            notification: Palette.alert,
+          },
+        }}>
+        <NotificationResponseHandler />
+        <NavigationStack />
+      </ThemeProvider>
+    </>
   );
 }

@@ -223,7 +223,7 @@ export default function AuthCallbackScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}>
         <View style={styles.card}>
-          <Text style={styles.eyebrow}>Crew attendance</Text>
+          <Text style={styles.eyebrow}>Prime Build Work Limited</Text>
 
           {callbackState === 'verifying' ? (
             <View style={styles.centeredContent}>
@@ -237,7 +237,7 @@ export default function AuthCallbackScreen() {
             <>
               <Text style={styles.title}>Set your password</Text>
               <Text style={styles.subtitle}>
-                Choose the password you’ll use to sign in to Crew Attendance.
+                Choose the password you’ll use to sign in to Prime Build Work Limited.
               </Text>
 
               <View style={styles.form}>

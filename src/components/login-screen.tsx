@@ -101,7 +101,7 @@ export function LoginScreen({ initialSuccessMessage }: LoginScreenProps) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}>
         <View style={styles.card}>
-          <Text style={styles.eyebrow}>Crew attendance</Text>
+          <Text style={styles.eyebrow}>Prime Build Work Limited</Text>
           <Text style={styles.title}>{isResetMode ? 'Reset password' : 'Welcome back'}</Text>
           <Text style={styles.subtitle}>
             {isResetMode

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "crew-attendance",
+    "name": "Prime Build Work Limited",
     "slug": "crew-attendance",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -29,6 +29,7 @@
     },
     "web": {
       "output": "static",
+      "name": "Prime Build Work Limited",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -37,13 +38,13 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Crew Attendance to use location services for clock-in, clock-out, and task address lookup."
+          "locationWhenInUsePermission": "Allow Prime Build Work Limited to use location services for clock-in, clock-out, and task address lookup."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Crew Attendance to take task completion photos.",
+          "cameraPermission": "Allow Prime Build Work Limited to take task completion photos.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": false
         }

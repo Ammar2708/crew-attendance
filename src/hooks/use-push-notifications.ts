@@ -100,7 +100,7 @@ async function registerPushToken(
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'Crew Attendance',
+      name: 'Prime Build Work Limited',
       importance: Notifications.AndroidImportance.HIGH,
     });
     console.log('[push] Android notification channel is ready.');
