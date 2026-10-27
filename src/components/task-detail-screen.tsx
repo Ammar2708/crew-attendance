@@ -1,6 +1,6 @@
 import { CameraView, type CameraCapturedPicture, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { createElement, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -32,7 +32,9 @@ type SelectedPhoto = {
   id: string;
   uri: string;
   capturedAt: string;
+  source: 'camera' | 'gallery';
   format?: CameraCapturedPicture['format'];
+  contentType?: string;
 };
 
 type PermissionIssue = {
@@ -56,8 +58,12 @@ function createSelectedPhotoId() {
 
 function getUploadMetadata(photo: SelectedPhoto) {
   const uriExtension = photo.uri.split(/[?#]/, 1)[0].match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  const mimeExtension = Object.entries(IMAGE_MIME_TYPE_BY_EXTENSION).find(
+    ([, mimeType]) => mimeType === photo.contentType,
+  )?.[0];
   const extension =
     photo.format ||
+    mimeExtension ||
     (uriExtension && IMAGE_MIME_TYPE_BY_EXTENSION[uriExtension] ? uriExtension : null) ||
     'jpg';
 
@@ -119,6 +125,7 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
           id: createSelectedPhotoId(),
           uri: capturedPhoto.uri,
           capturedAt,
+          source: 'camera',
           format: capturedPhoto.format,
         },
       ]);
@@ -130,12 +137,47 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
     }
   }
 
+  function chooseGalleryPhotos() {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    document.getElementById('task-gallery-upload')?.click();
+  }
+
+  function chooseCameraPhoto() {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    document.getElementById('task-camera-upload')?.click();
+  }
+
+  function handleWebPhotoSelection(
+    event: React.ChangeEvent<HTMLInputElement>,
+    source: 'camera' | 'gallery',
+  ) {
+    const files = Array.from(event.currentTarget.files ?? []);
+    const selectedAt = new Date().toISOString();
+    setPhotos((current) => [
+      ...current,
+      ...files.map((file) => ({
+        id: createSelectedPhotoId(),
+        uri: URL.createObjectURL(file),
+        capturedAt: selectedAt,
+        source,
+        contentType: file.type || undefined,
+      })),
+    ]);
+    event.currentTarget.value = '';
+  }
+
   function removePhoto(photoId: string) {
-    setPhotos((current) => current.filter((photo) => photo.id !== photoId));
+    setPhotos((current) => {
+      const photo = current.find((item) => item.id === photoId);
+      if (photo?.source === 'gallery') URL.revokeObjectURL(photo.uri);
+      return current.filter((item) => item.id !== photoId);
+    });
   }
 
   async function submitPhotos() {
-    if (isWeb || photos.length === 0 || !task || isSubmitting) return;
+    if (photos.length === 0 || !task || isSubmitting) return;
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -145,7 +187,7 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
       const photoRows: {
         task_id: string;
         photo_url: string;
-        source: 'camera';
+        source: 'camera' | 'gallery';
         captured_at: string;
       }[] = [];
 
@@ -153,7 +195,9 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
         const fileResponse = await fetch(photo.uri);
         if (!fileResponse.ok) throw new Error('Unable to read one of the captured photos.');
 
-        const { extension, contentType } = getUploadMetadata(photo);
+        const metadata = getUploadMetadata(photo);
+        const contentType = photo.contentType || metadata.contentType;
+        const extension = metadata.extension;
         const filename = `task-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`;
         const objectPath = `${task.id}/${filename}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -168,7 +212,7 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
         photoRows.push({
           task_id: task.id,
           photo_url: uploadData.path,
-          source: 'camera',
+          source: photo.source,
           captured_at: photo.capturedAt,
         });
       }
@@ -189,6 +233,9 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
 
       markCompleted();
       const submittedPhotoCount = photos.length;
+      photos.forEach((photo) => {
+        if (photo.source === 'gallery') URL.revokeObjectURL(photo.uri);
+      });
       setPhotos([]);
       setJustCompleted(true);
       setSuccessMessage(
@@ -247,6 +294,28 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        {isWeb
+          ? createElement('input', {
+              accept: 'image/*',
+              id: 'task-gallery-upload',
+              multiple: true,
+              onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+                handleWebPhotoSelection(event, 'gallery'),
+              style: { display: 'none' },
+              type: 'file',
+            })
+          : null}
+        {isWeb
+          ? createElement('input', {
+              accept: 'image/*',
+              capture: 'environment',
+              id: 'task-camera-upload',
+              onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+                handleWebPhotoSelection(event, 'camera'),
+              style: { display: 'none' },
+              type: 'file',
+            })
+          : null}
         {isLoading ? (
           <ActivityIndicator color={Palette.safety} size="large" />
         ) : taskError || !task ? (
@@ -296,12 +365,29 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
                   ))}
                 </View>
                 <View style={styles.addPhotoActions}>
-                  <Pressable
-                    disabled={isSubmitting}
-                    onPress={() => void openCamera()}
-                    style={[styles.primaryButton, styles.addPhotoButton]}>
-                    <Text style={styles.primaryButtonText}>Take photo</Text>
-                  </Pressable>
+                  {isWeb ? (
+                    <>
+                      <Pressable
+                        disabled={isSubmitting}
+                        onPress={chooseCameraPhoto}
+                        style={[styles.primaryButton, styles.addPhotoButton]}>
+                        <Text style={styles.primaryButtonText}>Take photo</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={isSubmitting}
+                        onPress={chooseGalleryPhotos}
+                        style={[styles.primaryButton, styles.addPhotoButton]}>
+                        <Text style={styles.primaryButtonText}>Choose from gallery</Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <Pressable
+                      disabled={isSubmitting}
+                      onPress={() => void openCamera()}
+                      style={[styles.primaryButton, styles.addPhotoButton]}>
+                      <Text style={styles.primaryButtonText}>Take photo</Text>
+                    </Pressable>
+                  )}
                 </View>
                 <Pressable
                   disabled={isSubmitting}
@@ -326,10 +412,17 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
                 <Text style={styles.completedMessageText}>This task is completed.</Text>
               </View>
             ) : isWeb ? (
-              <View style={styles.webPhotoNotice}>
-                <Text style={styles.webPhotoNoticeText}>
-                  Use the mobile app to take completion photos.
-                </Text>
+              <View style={styles.photoSourceActions}>
+                <Pressable
+                  onPress={chooseCameraPhoto}
+                  style={[styles.primaryButton, styles.photoSourceButton]}>
+                  <Text style={styles.primaryButtonText}>Take photo</Text>
+                </Pressable>
+                <Pressable
+                  onPress={chooseGalleryPhotos}
+                  style={[styles.primaryButton, styles.photoSourceButton]}>
+                  <Text style={styles.primaryButtonText}>Choose from gallery</Text>
+                </Pressable>
               </View>
             ) : (
               <View style={styles.photoSourceActions}>
@@ -438,20 +531,6 @@ const styles = StyleSheet.create({
   addPhotoActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
   addPhotoButton: { marginTop: 0 },
   submitButton: { flex: 0, marginTop: 12 },
-  webPhotoNotice: {
-    backgroundColor: Palette.paper,
-    borderColor: Palette.line,
-    borderWidth: 1,
-    marginTop: 28,
-    padding: 16,
-  },
-  webPhotoNoticeText: {
-    color: Palette.steel,
-    fontFamily: Fonts.sansMedium,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
-  },
   notice: { alignItems: 'center', gap: 8, marginTop: 18 },
   error: { color: Palette.alert, fontFamily: Fonts.sans, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 16 },
   success: { color: Palette.onSite, fontFamily: Fonts.sansMedium, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 16 },
