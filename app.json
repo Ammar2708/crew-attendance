@@ -48,6 +48,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "granularPermissions": ["photo"],
+          "photosPermission": "Allow Prime Build Work Limited to save task completion photos to your photo library.",
+          "savePhotosPermission": "Allow Prime Build Work Limited to save task completion photos to your photo library."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "color": "#F5A623",

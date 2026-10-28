@@ -1,10 +1,14 @@
 import { Image } from 'expo-image';
+import { File, Paths } from 'expo-file-system';
 import { router } from 'expo-router';
+import { Asset, requestPermissionsAsync } from 'expo-media-library';
 import { useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -184,6 +188,44 @@ function PhotoLightbox({
   activePhoto: ActivePhoto | null;
   onClose: () => void;
 }) {
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function savePhoto() {
+    const url = activePhoto?.photo.url;
+    if (!url || isSaving) return;
+
+    setIsSaving(true);
+    let downloadedFile: File | null = null;
+    try {
+      const permission = await requestPermissionsAsync(true, ['photo']);
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to save this picture to your library.');
+        return;
+      }
+
+      const pathname = new URL(url).pathname;
+      const extension = pathname.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+      const supportedExtension = extension && ['avif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp'].includes(extension)
+        ? extension
+        : 'jpg';
+      const filename = `completion-${activePhoto.photo.id}-${Date.now()}.${supportedExtension}`;
+      downloadedFile = await File.downloadFileAsync(url, new File(Paths.cache, filename));
+      await Asset.create(downloadedFile.uri);
+      Alert.alert('Photo saved', 'The picture was saved to your photo library.');
+    } catch {
+      Alert.alert('Download failed', 'Unable to save this picture. Please try again.');
+    } finally {
+      if (downloadedFile) {
+        try {
+          await downloadedFile.delete();
+        } catch {
+          // A cache cleanup failure should not undo a successful save.
+        }
+      }
+      setIsSaving(false);
+    }
+  }
+
   return (
     <Modal
       animationType="fade"
@@ -214,6 +256,17 @@ function PhotoLightbox({
                 style={styles.lightboxImage}
                 transition={150}
               />
+              {Platform.OS !== 'web' ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Download picture to photo library"
+                  disabled={isSaving}
+                  onPress={() => void savePhoto()}
+                  style={({ pressed }) => [styles.downloadButton, (pressed || isSaving) && styles.pressed]}>
+                  {isSaving ? <ActivityIndicator color={Palette.ink} /> : null}
+                  <Text style={styles.downloadButtonText}>{isSaving ? 'Saving…' : 'Download picture'}</Text>
+                </Pressable>
+              ) : null}
               <Text style={styles.lightboxPhotoTime}>
                 {formatPhotoTime(activePhoto.photo.capturedAt, true)}
               </Text>
@@ -471,6 +524,18 @@ const styles = StyleSheet.create({
   closeButton: { ...ledgerControls.secondary, minHeight: 38, paddingHorizontal: 14 },
   closeButtonText: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 14 },
   lightboxImage: { flex: 1, margin: 20 },
+  downloadButton: {
+    ...ledgerControls.secondary,
+    alignSelf: 'center',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingHorizontal: 18,
+  },
+  downloadButtonText: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 14 },
   lightboxPhotoTime: {
     color: Palette.surface,
     fontFamily: Fonts.mono,
