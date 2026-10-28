@@ -188,7 +188,6 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
         task_id: string;
         photo_url: string;
         source: 'camera' | 'gallery';
-        captured_at: string;
       }[] = [];
 
       for (const photo of photos) {
@@ -213,7 +212,6 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
           task_id: task.id,
           photo_url: uploadData.path,
           source: photo.source,
-          captured_at: photo.capturedAt,
         });
       }
 

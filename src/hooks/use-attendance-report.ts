@@ -98,15 +98,15 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
         task_id,
         photo_url,
         source,
-        captured_at,
         uploaded_at,
+        captured_at:uploaded_at,
         task:tasks!inner(id, title, site_address, assigned_to, status, created_at)
       `)
       .eq('task.assigned_to', employeeId)
       .eq('task.status', 'completed')
       .gte('task.created_at', range.taskStart)
       .lt('task.created_at', range.taskEnd)
-      .order('captured_at', { ascending: false })
+      .order('uploaded_at', { ascending: false })
       .returns<ReportTaskPhoto[]>(),
   ]);
 
