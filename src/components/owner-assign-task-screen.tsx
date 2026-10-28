@@ -42,7 +42,7 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
     errorMessage: loadError,
     reload,
   } = useOwnerTasks();
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [siteAddress, setSiteAddress] = useState('');
   const [taskLocation, setTaskLocation] = useState<AttendanceCoordinates | null>(null);
@@ -94,8 +94,6 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
       }),
     [distancesByEmployeeId, employees],
   );
-  const effectiveEmployeeId = selectedEmployeeId || sortedEmployees[0]?.id || '';
-
   function changeSiteAddress(value: string) {
     locationRequestId.current += 1;
     setSiteAddress(value);
@@ -127,8 +125,8 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
   }
 
   async function submitTask() {
-    if (!effectiveEmployeeId || !title.trim() || !siteAddress.trim() || !taskLocation) {
-      setFormError('Select an employee, enter a title, and set the task location.');
+    if (selectedEmployeeIds.length === 0 || !title.trim() || !siteAddress.trim() || !taskLocation) {
+      setFormError('Select at least one employee, enter a title, and set the task location.');
       return;
     }
 
@@ -142,19 +140,21 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
     setFormError(null);
     setSuccessMessage(null);
 
-    const task = {
-      assigned_to: effectiveEmployeeId,
+    const tasksToAssign = selectedEmployeeIds.map((employeeId) => ({
+      assigned_to: employeeId,
       assigned_by: ownerId,
       title: title.trim(),
       site_address: siteAddress.trim(),
       due_date: normalizedDueDate || null,
       status: 'pending',
-    };
-    const { error: locationInsertError } = await supabase.from('tasks').insert({
-      ...task,
-      site_lat: taskLocation.latitude,
-      site_lng: taskLocation.longitude,
-    });
+    }));
+    const { error: locationInsertError } = await supabase.from('tasks').insert(
+      tasksToAssign.map((task) => ({
+        ...task,
+        site_lat: taskLocation.latitude,
+        site_lng: taskLocation.longitude,
+      })),
+    );
 
     // Keep assignment available while the nullable coordinate migration is rolling out.
     // The human-readable/reverse-geocoded site address still preserves the selected point.
@@ -162,7 +162,7 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
       locationInsertError?.code === 'PGRST204' &&
       /site_(lat|lng)/.test(locationInsertError.message);
     const error = isMissingLocationColumn
-      ? (await supabase.from('tasks').insert(task)).error
+      ? (await supabase.from('tasks').insert(tasksToAssign)).error
       : locationInsertError;
 
     if (error) {
@@ -175,7 +175,9 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
     setSiteAddress('');
     setTaskLocation(null);
     setDueDate('');
-    setSuccessMessage('Task assigned successfully.');
+    setSuccessMessage(
+      `Task assigned to ${selectedEmployeeIds.length} ${selectedEmployeeIds.length === 1 ? 'employee' : 'employees'}.`,
+    );
     setIsSubmitting(false);
     await reload();
   }
@@ -230,17 +232,17 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
             )}
           </Pressable>
 
-          <Text style={styles.label}>Employee</Text>
+          <Text style={styles.label}>Employees</Text>
           <EmployeePicker
             distancesByEmployeeId={distancesByEmployeeId}
             employees={sortedEmployees}
-            onChange={setSelectedEmployeeId}
-            value={effectiveEmployeeId}
+            onChange={setSelectedEmployeeIds}
+            value={selectedEmployeeIds}
           />
           <Text style={styles.pickerHint}>
             {taskLocation
-              ? 'Clocked-in employees are sorted nearest first. Others remain available for manual selection.'
-              : 'Set the task location to compare straight-line distances.'}
+              ? 'Select one or more employees; each gets an individual copy with separate completion tracking. Clocked-in employees are sorted nearest first.'
+              : 'Select one or more employees; each gets an individual copy with separate completion tracking. Set the task location to compare distances.'}
           </Text>
 
           <Text style={styles.label}>Due date (optional)</Text>
@@ -265,7 +267,11 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
             {isSubmitting ? (
               <ActivityIndicator color={Palette.ink} />
             ) : (
-              <Text style={styles.submitButtonText}>Assign task</Text>
+              <Text style={styles.submitButtonText}>
+                {selectedEmployeeIds.length > 1
+                  ? `Assign task to ${selectedEmployeeIds.length} employees`
+                  : 'Assign task'}
+              </Text>
             )}
           </Pressable>
         </View>
