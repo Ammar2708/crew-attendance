@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Fonts, Palette, Radius } from '@/constants/theme';
 import type { EmployeeProfile } from '@/types/tasks';
@@ -40,9 +39,10 @@ export function EmployeePicker({
   return (
     <>
       <Pressable
+        accessibilityState={{ expanded: isOpen }}
         accessibilityRole="button"
         disabled={employees.length === 0}
-        onPress={() => setIsOpen(true)}
+        onPress={() => setIsOpen((open) => !open)}
         style={({ pressed }) => [styles.select, pressed && styles.pressed]}>
         <Text style={[styles.selectText, selectedEmployees.length === 0 && styles.placeholder]}>
           {employees.length === 0 ? 'No active employees' : selectionLabel}
@@ -50,8 +50,8 @@ export function EmployeePicker({
         <Text style={styles.chevron}>⌄</Text>
       </Pressable>
 
-      <Modal animationType="slide" onRequestClose={() => setIsOpen(false)} visible={isOpen}>
-        <SafeAreaView style={styles.modalSafeArea}>
+      {isOpen ? (
+        <View style={styles.employeePanel}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Select employees</Text>
             <View style={styles.modalActions}>
@@ -65,21 +65,19 @@ export function EmployeePicker({
               </Pressable>
             </View>
           </View>
-          <FlatList
-            contentContainerStyle={styles.list}
-            data={employees}
-            keyExtractor={(employee) => employee.id}
-            renderItem={({ item }) => {
-              const isSelected = value.includes(item.id);
+          <ScrollView contentContainerStyle={styles.list} nestedScrollEnabled style={styles.employeeList}>
+            {employees.map((employee) => {
+              const isSelected = value.includes(employee.id);
               return (
                 <Pressable
+                  key={employee.id}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: isSelected }}
                   onPress={() => {
                     onChange(
                       isSelected
-                        ? value.filter((employeeId) => employeeId !== item.id)
-                        : [...value, item.id],
+                        ? value.filter((employeeId) => employeeId !== employee.id)
+                        : [...value, employee.id],
                     );
                   }}
                   style={({ pressed }) => [
@@ -88,15 +86,15 @@ export function EmployeePicker({
                     pressed && styles.pressed,
                   ]}>
                   <View style={styles.optionCopy}>
-                    <Text style={styles.optionName}>{item.full_name}</Text>
+                    <Text style={styles.optionName}>{employee.full_name}</Text>
                     <Text style={styles.optionRole}>
-                      {item.role}{distancesByEmployeeId?.has(item.id) ? ' · clocked in' : ''}
+                      {employee.role}{distancesByEmployeeId?.has(employee.id) ? ' - clocked in' : ''}
                     </Text>
                   </View>
                   <View style={styles.optionTrailing}>
-                    {distancesByEmployeeId?.has(item.id) ? (
+                    {distancesByEmployeeId?.has(employee.id) ? (
                       <Text style={styles.optionDistance}>
-                        {formatDistance(distancesByEmployeeId.get(item.id)!)}
+                        {formatDistance(distancesByEmployeeId.get(employee.id)!)}
                       </Text>
                     ) : null}
                     <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
@@ -105,10 +103,10 @@ export function EmployeePicker({
                   </View>
                 </Pressable>
               );
-            }}
-          />
-        </SafeAreaView>
-      </Modal>
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
     </>
   );
 }
@@ -128,7 +126,12 @@ const styles = StyleSheet.create({
   selectText: { flex: 1, color: Palette.ink, fontFamily: Fonts.sans, fontSize: 16 },
   placeholder: { color: Palette.steel },
   chevron: { color: Palette.steel, fontSize: 20 },
-  modalSafeArea: { flex: 1, backgroundColor: Palette.paper },
+  employeePanel: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: Palette.line,
+    backgroundColor: Palette.paper,
+  },
   modalHeader: {
     minHeight: 56,
     flexDirection: 'row',
@@ -143,7 +146,8 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   selectAll: { color: Palette.onSite, fontFamily: Fonts.sansSemiBold, fontSize: 14 },
   done: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 16 },
-  list: { padding: 20 },
+  employeeList: { maxHeight: 320 },
+  list: { padding: 10 },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
