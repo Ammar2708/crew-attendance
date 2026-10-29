@@ -56,6 +56,10 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
     () => new Map(employees.map((employee) => [employee.id, employee.full_name])),
     [employees],
   );
+  const assignableEmployees = useMemo(
+    () => employees.filter((employee) => employee.role === 'employee'),
+    [employees],
+  );
   const clockedInEmployeeCoordinates = useMemo(() => {
     const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
     return clockedInLocations.flatMap((location) => {
@@ -235,7 +239,7 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
           <Text style={styles.label}>Employees</Text>
           <EmployeePicker
             distancesByEmployeeId={distancesByEmployeeId}
-            employees={sortedEmployees}
+            employees={sortedEmployees.filter((employee) => employee.role === 'employee')}
             onChange={setSelectedEmployeeIds}
             value={selectedEmployeeIds}
           />
@@ -261,9 +265,9 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
           {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
           <Pressable
-            disabled={isSubmitting || employees.length === 0}
+            disabled={isSubmitting || assignableEmployees.length === 0}
             onPress={() => void submitTask()}
-            style={[styles.submitButton, (isSubmitting || employees.length === 0) && styles.disabled]}>
+            style={[styles.submitButton, (isSubmitting || assignableEmployees.length === 0) && styles.disabled]}>
             {isSubmitting ? (
               <ActivityIndicator color={Palette.ink} />
             ) : (

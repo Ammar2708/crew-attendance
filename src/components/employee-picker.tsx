@@ -28,6 +28,7 @@ export function EmployeePicker({
     () => employees.filter((employee) => value.includes(employee.id)),
     [employees, value],
   );
+  const allEmployeesSelected = employees.length > 0 && selectedEmployees.length === employees.length;
   const selectionLabel = selectedEmployees.length === 0
     ? 'Select employees'
     : selectedEmployees.length === 1
@@ -53,9 +54,16 @@ export function EmployeePicker({
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Select employees</Text>
-            <Pressable accessibilityRole="button" onPress={() => setIsOpen(false)}>
-              <Text style={styles.done}>Done</Text>
-            </Pressable>
+            <View style={styles.modalActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onChange(allEmployeesSelected ? [] : employees.map((employee) => employee.id))}>
+                <Text style={styles.selectAll}>{allEmployeesSelected ? 'Clear all' : 'Select all'}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => setIsOpen(false)}>
+                <Text style={styles.done}>Done</Text>
+              </Pressable>
+            </View>
           </View>
           <FlatList
             contentContainerStyle={styles.list}
@@ -132,6 +140,8 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.paper,
   },
   modalTitle: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 18 },
+  modalActions: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  selectAll: { color: Palette.onSite, fontFamily: Fonts.sansSemiBold, fontSize: 14 },
   done: { color: Palette.ink, fontFamily: Fonts.sansBold, fontSize: 16 },
   list: { padding: 20 },
   option: {
