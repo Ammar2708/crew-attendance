@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,9 +17,10 @@ import { StatusStamp, ledgerControls } from '@/components/site-ledger-ui';
 import { Fonts, Layout, Palette } from '@/constants/theme';
 import { useOwnerTasks } from '@/hooks/use-tasks';
 import { supabase } from '@/lib/supabase';
-import { geocodeTaskAddress } from '@/lib/task-geocoding';
+import { suggestTaskAddresses } from '@/lib/task-geocoding';
 import { distanceInKm } from '@/lib/task-location';
 import type { AttendanceCoordinates } from '@/types/attendance';
+import type { TaskAddressSuggestion } from '@/types/tasks';
 
 function isValidDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -46,12 +48,13 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
   const [title, setTitle] = useState('');
   const [siteAddress, setSiteAddress] = useState('');
   const [taskLocation, setTaskLocation] = useState<AttendanceCoordinates | null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<TaskAddressSuggestion[]>([]);
+  const [isSuggestingAddress, setIsSuggestingAddress] = useState(false);
   const [dueDate, setDueDate] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGeocoding, setIsGeocoding] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const locationRequestId = useRef(0);
+  const suggestionRequestId = useRef(0);
   const employeeNames = useMemo(
     () => new Map(employees.map((employee) => [employee.id, employee.full_name])),
     [employees],
@@ -98,34 +101,47 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
       }),
     [distancesByEmployeeId, employees],
   );
+
+  useEffect(() => {
+    const query = siteAddress.trim();
+    if (query.length < 3 || taskLocation) return;
+
+    const requestId = ++suggestionRequestId.current;
+    const timeoutId = setTimeout(() => {
+      setIsSuggestingAddress(true);
+      void suggestTaskAddresses(query)
+        .then((suggestions) => {
+          if (requestId === suggestionRequestId.current) setAddressSuggestions(suggestions);
+        })
+        .catch(() => {
+          if (requestId === suggestionRequestId.current) setAddressSuggestions([]);
+        })
+        .finally(() => {
+          if (requestId === suggestionRequestId.current) setIsSuggestingAddress(false);
+        });
+    }, 700);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (requestId === suggestionRequestId.current) suggestionRequestId.current += 1;
+    };
+  }, [siteAddress, taskLocation]);
+
   function changeSiteAddress(value: string) {
-    locationRequestId.current += 1;
     setSiteAddress(value);
     setTaskLocation(null);
+    setAddressSuggestions([]);
+    setIsSuggestingAddress(value.trim().length >= 3);
     setSuccessMessage(null);
   }
 
-  async function findAddress() {
-    const address = siteAddress.trim();
-    if (!address) {
-      setFormError('Enter a site address to look up.');
-      return;
-    }
-
-    const requestId = ++locationRequestId.current;
-    setIsGeocoding(true);
+  function selectAddressSuggestion(suggestion: TaskAddressSuggestion) {
+    setSiteAddress(suggestion.label);
+    setTaskLocation({ latitude: suggestion.latitude, longitude: suggestion.longitude });
+    setAddressSuggestions([]);
+    setIsSuggestingAddress(false);
     setFormError(null);
     setSuccessMessage(null);
-    try {
-      const coordinate = await geocodeTaskAddress(address);
-      if (requestId === locationRequestId.current) setTaskLocation(coordinate);
-    } catch (error) {
-      if (requestId === locationRequestId.current) {
-        setFormError(error instanceof Error ? error.message : 'Unable to look up that address.');
-      }
-    } finally {
-      if (requestId === locationRequestId.current) setIsGeocoding(false);
-    }
   }
 
   async function submitTask() {
@@ -220,21 +236,31 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
             style={[styles.input, styles.multilineInput]}
             value={siteAddress}
           />
-          <Pressable
-            accessibilityRole="button"
-            disabled={isGeocoding || !siteAddress.trim()}
-            onPress={() => void findAddress()}
-            style={({ pressed }) => [
-              styles.geocodeButton,
-              (isGeocoding || !siteAddress.trim()) && styles.disabled,
-              pressed && styles.pressed,
-            ]}>
-            {isGeocoding ? (
-              <ActivityIndicator color={Palette.ink} size="small" />
-            ) : (
-              <Text style={styles.geocodeButtonText}>Find address on map</Text>
-            )}
-          </Pressable>
+          {isSuggestingAddress ? (
+            <Text style={styles.suggestionStatus}>Searching addresses…</Text>
+          ) : addressSuggestions.length > 0 ? (
+            <View style={styles.suggestionList}>
+              {addressSuggestions.map((suggestion) => (
+                <Pressable
+                  accessibilityRole="button"
+                  key={`${suggestion.latitude},${suggestion.longitude}`}
+                  onPress={() => selectAddressSuggestion(suggestion)}
+                  style={({ pressed }) => [styles.suggestionOption, pressed && styles.pressed]}>
+                  <Text style={styles.suggestionText}>{suggestion.label}</Text>
+                </Pressable>
+              ))}
+              <Pressable
+                accessibilityRole="link"
+                onPress={() => {
+                  void Linking.openURL('https://www.openstreetmap.org/copyright').catch(() => {});
+                }}
+                style={styles.suggestionAttributionButton}>
+                <Text style={styles.suggestionAttribution}>Address data © OpenStreetMap contributors</Text>
+              </Pressable>
+            </View>
+          ) : siteAddress.trim().length >= 3 && !taskLocation ? (
+            <Text style={styles.suggestionStatus}>No matches yet. Add the town or postcode.</Text>
+          ) : null}
 
           <Text style={styles.label}>Employees</Text>
           <EmployeePicker
@@ -341,12 +367,17 @@ const styles = StyleSheet.create({
   input: { ...ledgerControls.input },
   dateInput: { fontFamily: Fonts.mono },
   multilineInput: { minHeight: 88, paddingTop: 13, textAlignVertical: 'top' },
-  geocodeButton: {
-    ...ledgerControls.secondary,
-    minHeight: 44,
-    marginTop: 10,
+  suggestionStatus: { color: Palette.steel, fontFamily: Fonts.sans, fontSize: 12, marginTop: 8 },
+  suggestionList: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: Palette.line,
+    backgroundColor: Palette.surface,
   },
-  geocodeButtonText: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 14 },
+  suggestionOption: { borderBottomWidth: 1, borderBottomColor: Palette.line, padding: 12 },
+  suggestionText: { color: Palette.ink, fontFamily: Fonts.sans, fontSize: 14, lineHeight: 20 },
+  suggestionAttributionButton: { alignSelf: 'flex-start' },
+  suggestionAttribution: { color: Palette.steel, fontFamily: Fonts.sans, fontSize: 10, padding: 8, textDecorationLine: 'underline' },
   pickerHint: { color: Palette.steel, fontFamily: Fonts.sans, fontSize: 12, lineHeight: 18, marginTop: 7 },
   error: { color: Palette.alert, fontFamily: Fonts.sans, fontSize: 14, lineHeight: 20, marginTop: 14 },
   success: { color: Palette.onSite, fontFamily: Fonts.sansMedium, fontSize: 14, lineHeight: 20, marginTop: 14 },

@@ -1,4 +1,5 @@
 import type { AttendanceCoordinates } from '@/types/attendance';
+import type { TaskAddressSuggestion } from '@/types/tasks';
 import { supabase } from '@/lib/supabase';
 
 type GeocodeResponse = {
@@ -7,7 +8,34 @@ type GeocodeResponse = {
   error?: string;
 };
 
+type SuggestionsResponse = {
+  suggestions?: TaskAddressSuggestion[];
+  error?: string;
+};
+
 const resultCache = new Map<string, AttendanceCoordinates>();
+
+export async function suggestTaskAddresses(address: string): Promise<TaskAddressSuggestion[]> {
+  const query = address.trim();
+  if (query.length < 3) return [];
+
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw new Error('Sign in again to look up an address.');
+
+  const params = new URLSearchParams({ q: query, suggest: '1' });
+  const response = await fetch(`/api/geocode?${params.toString()}`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${data.session.access_token}`,
+    },
+  });
+  const result = (await response.json().catch(() => ({}))) as SuggestionsResponse;
+  if (!response.ok) {
+    throw new Error(result.error ?? 'Address suggestions are temporarily unavailable.');
+  }
+
+  return Array.isArray(result.suggestions) ? result.suggestions : [];
+}
 
 export async function geocodeTaskAddress(address: string): Promise<AttendanceCoordinates> {
   const cacheKey = address.trim().toLocaleLowerCase();

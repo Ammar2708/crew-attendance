@@ -3,6 +3,7 @@ const MIN_REQUEST_INTERVAL_MS = 1100;
 const { createClient } = require('@supabase/supabase-js');
 
 const resultCache = new Map();
+const suggestionCache = new Map();
 let nextUpstreamRequestAt = 0;
 
 function wait(milliseconds) {
@@ -17,6 +18,7 @@ module.exports = async function geocode(request, response) {
 
   const rawQuery = Array.isArray(request.query.q) ? request.query.q[0] : request.query.q;
   const address = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+  const wantsSuggestions = request.query.suggest === '1';
   if (address.length < 3 || address.length > 250) {
     return response.status(400).json({ error: 'Enter a valid site address.' });
   }
@@ -50,6 +52,57 @@ module.exports = async function geocode(request, response) {
   }
 
   const cacheKey = address.toLocaleLowerCase();
+  if (wantsSuggestions) {
+    const cachedSuggestions = suggestionCache.get(cacheKey);
+    if (cachedSuggestions) return response.status(200).json({ suggestions: cachedSuggestions });
+
+    try {
+      const upstreamUrl = new URL('/api/', 'https://photon.komoot.io');
+      upstreamUrl.search = new URLSearchParams({ q: address, limit: '5', lang: 'en' });
+      const upstreamResponse = await fetch(upstreamUrl, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!upstreamResponse.ok) {
+        return response.status(502).json({ error: 'Address suggestions are temporarily unavailable.' });
+      }
+
+      const payload = await upstreamResponse.json();
+      const seenLabels = new Set();
+      const suggestions = (Array.isArray(payload.features) ? payload.features : []).flatMap((feature) => {
+        const properties = feature?.properties ?? {};
+        const coordinates = feature?.geometry?.coordinates;
+        const longitude = Number(coordinates?.[0]);
+        const latitude = Number(coordinates?.[1]);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+
+        const streetName = [properties.housenumber, properties.street].filter(Boolean).join(' ');
+        const labelParts = [
+          properties.name,
+          streetName && streetName !== properties.name ? streetName : null,
+          properties.district,
+          properties.locality,
+          properties.city,
+          properties.county,
+          properties.state,
+          properties.postcode,
+          properties.country,
+        ].filter((part, index, parts) => part && parts.indexOf(part) === index);
+        const label = labelParts.join(', ');
+        if (!label || seenLabels.has(label)) return [];
+        seenLabels.add(label);
+        return [{ label, latitude, longitude }];
+      });
+
+      if (suggestionCache.size >= MAX_CACHE_ENTRIES) {
+        suggestionCache.delete(suggestionCache.keys().next().value);
+      }
+      suggestionCache.set(cacheKey, suggestions);
+      return response.status(200).json({ suggestions });
+    } catch {
+      return response.status(502).json({ error: 'Address suggestions are temporarily unavailable.' });
+    }
+  }
+
   const cachedResult = resultCache.get(cacheKey);
   if (cachedResult) return response.status(200).json(cachedResult);
 

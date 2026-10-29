@@ -12,6 +12,12 @@ export type ClockedInEmployeeLocation = {
   clock_in_lng: number;
 };
 
+export type TaskAddressSuggestion = {
+  label: string;
+  latitude: number;
+  longitude: number;
+};
+
 export type Task = {
   id: string;
   title: string;
