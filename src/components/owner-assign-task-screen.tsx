@@ -245,8 +245,8 @@ export function OwnerAssignTaskScreen({ ownerId }: { ownerId: string }) {
           />
           <Text style={styles.pickerHint}>
             {taskLocation
-              ? 'Select one or more employees; each gets an individual copy with separate completion tracking. Clocked-in employees are sorted nearest first.'
-              : 'Select one or more employees; each gets an individual copy with separate completion tracking. Set the task location to compare distances.'}
+              ? 'Tap each name to select several employees; selections stay checked until you tap Done. Use Select all to choose everyone. Each gets an individual copy with separate completion tracking. Clocked-in employees are sorted nearest first.'
+              : 'Tap each name to select several employees; selections stay checked until you tap Done. Use Select all to choose everyone. Each gets an individual copy with separate completion tracking. Set the task location to compare distances.'}
           </Text>
 
           <Text style={styles.label}>Due date (optional)</Text>

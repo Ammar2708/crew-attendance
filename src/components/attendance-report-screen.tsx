@@ -197,18 +197,34 @@ function PhotoLightbox({
     setIsSaving(true);
     let downloadedFile: File | null = null;
     try {
-      const permission = await requestPermissionsAsync(true, ['photo']);
-      if (!permission.granted) {
-        Alert.alert('Permission needed', 'Allow photo access to save this picture to your library.');
-        return;
-      }
-
       const pathname = new URL(url).pathname;
       const extension = pathname.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
       const supportedExtension = extension && ['avif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp'].includes(extension)
         ? extension
         : 'jpg';
       const filename = `completion-${activePhoto.photo.id}-${Date.now()}.${supportedExtension}`;
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Unable to download this picture.');
+        const imageBlob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(imageBlob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = downloadUrl;
+        downloadLink.download = filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
+        window.setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000);
+        return;
+      }
+
+      const permission = await requestPermissionsAsync(true, ['photo']);
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to save this picture to your library.');
+        return;
+      }
+
       downloadedFile = await File.downloadFileAsync(url, new File(Paths.cache, filename));
       await Asset.create(downloadedFile.uri);
       Alert.alert('Photo saved', 'The picture was saved to your photo library.');
@@ -256,17 +272,15 @@ function PhotoLightbox({
                 style={styles.lightboxImage}
                 transition={150}
               />
-              {Platform.OS !== 'web' ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Download picture to photo library"
-                  disabled={isSaving}
-                  onPress={() => void savePhoto()}
-                  style={({ pressed }) => [styles.downloadButton, (pressed || isSaving) && styles.pressed]}>
-                  {isSaving ? <ActivityIndicator color={Palette.ink} /> : null}
-                  <Text style={styles.downloadButtonText}>{isSaving ? 'Saving…' : 'Download picture'}</Text>
-                </Pressable>
-              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={Platform.OS === 'web' ? 'Download picture' : 'Download picture to photo library'}
+                disabled={isSaving}
+                onPress={() => void savePhoto()}
+                style={({ pressed }) => [styles.downloadButton, (pressed || isSaving) && styles.pressed]}>
+                {isSaving ? <ActivityIndicator color={Palette.ink} /> : null}
+                <Text style={styles.downloadButtonText}>{isSaving ? 'Saving…' : 'Download picture'}</Text>
+              </Pressable>
               <Text style={styles.lightboxPhotoTime}>
                 {formatPhotoTime(activePhoto.photo.capturedAt, true)}
               </Text>
