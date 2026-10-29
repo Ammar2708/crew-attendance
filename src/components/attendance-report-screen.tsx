@@ -1,7 +1,5 @@
 import { Image } from 'expo-image';
-import { File, Paths } from 'expo-file-system';
 import { router } from 'expo-router';
-import { Asset, requestPermissionsAsync } from 'expo-media-library';
 import { useState } from 'react';
 import {
   Alert,
@@ -38,6 +36,7 @@ import type {
   ReportDay,
   ReportView,
 } from '@/types/reports';
+import type { File as ExpoFile } from 'expo-file-system';
 
 function formatTime(value: string | null) {
   if (!value) return '—';
@@ -228,7 +227,7 @@ function PhotoLightbox({
     if (!url || isSaving) return;
 
     setIsSaving(true);
-    let downloadedFile: File | null = null;
+    let downloadedFile: ExpoFile | null = null;
     try {
       const pathname = new URL(url).pathname;
       const extension = pathname.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
@@ -242,6 +241,10 @@ function PhotoLightbox({
         return;
       }
 
+      const [{ File, Paths }, { Asset, requestPermissionsAsync }] = await Promise.all([
+        import('expo-file-system'),
+        import('expo-media-library'),
+      ]);
       const permission = await requestPermissionsAsync(true, ['photo']);
       if (!permission.granted) {
         Alert.alert('Permission needed', 'Allow photo access to save this picture to your library.');
