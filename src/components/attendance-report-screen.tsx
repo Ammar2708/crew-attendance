@@ -57,6 +57,26 @@ function formatPhotoTime(value: string, includeDate: boolean) {
   });
 }
 
+async function downloadPhotoInBrowser(url: string, photoId: string) {
+  const pathname = new URL(url).pathname;
+  const extension = pathname.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  const supportedExtension = extension && ['avif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp'].includes(extension)
+    ? extension
+    : 'jpg';
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Unable to download this picture.');
+
+  const imageBlob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(imageBlob);
+  const downloadLink = document.createElement('a');
+  downloadLink.href = downloadUrl;
+  downloadLink.download = `completion-${photoId}-${Date.now()}.${supportedExtension}`;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  downloadLink.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000);
+}
+
 function ViewToggle({ value, onChange }: { value: ReportView; onChange: (view: ReportView) => void }) {
   return (
     <FolderToggle
@@ -156,6 +176,19 @@ function CompletedTasksSection({
                           <Text style={styles.photoUnavailableText}>Photo unavailable</Text>
                         </View>
                       )}
+                      {Platform.OS === 'web' && photo.url ? (
+                        <Pressable
+                          accessibilityLabel={`Download completion photo ${index + 1} for ${task.title}`}
+                          accessibilityRole="button"
+                          onPress={() => {
+                            void downloadPhotoInBrowser(photo.url!, photo.id).catch(() => {
+                              Alert.alert('Download failed', 'Unable to save this picture. Please try again.');
+                            });
+                          }}
+                          style={({ pressed }) => [styles.webDownloadButton, pressed && styles.pressed]}>
+                          <Text style={styles.webDownloadButtonText}>Download</Text>
+                        </Pressable>
+                      ) : null}
                       <Text style={styles.photoTimeLabel}>
                         {formatPhotoTime(photo.capturedAt, view === 'monthly')}
                       </Text>
@@ -205,17 +238,7 @@ function PhotoLightbox({
       const filename = `completion-${activePhoto.photo.id}-${Date.now()}.${supportedExtension}`;
 
       if (Platform.OS === 'web') {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Unable to download this picture.');
-        const imageBlob = await response.blob();
-        const downloadUrl = window.URL.createObjectURL(imageBlob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = downloadUrl;
-        downloadLink.download = filename;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        downloadLink.remove();
-        window.setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000);
+        await downloadPhotoInBrowser(url, activePhoto.photo.id);
         return;
       }
 
@@ -481,6 +504,8 @@ const styles = StyleSheet.create({
   taskPhotoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
   thumbnailButton: { borderRadius: Radius.control, overflow: 'hidden' },
   thumbnailColumn: { alignItems: 'center', gap: 5 },
+  webDownloadButton: { alignItems: 'center', backgroundColor: Palette.paper, marginTop: 4, paddingHorizontal: 10, paddingVertical: 6 },
+  webDownloadButtonText: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 11 },
   thumbnail: { width: 84, height: 84, backgroundColor: Palette.line },
   photoTimeLabel: { color: Palette.ink, fontFamily: Fonts.mono, fontSize: 10 },
   photoSourceLabel: { color: Palette.steel, fontFamily: Fonts.sansMedium, fontSize: 10 },
