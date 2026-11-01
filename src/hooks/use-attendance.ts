@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
 
+import { getBusinessDateKey } from '@/lib/work-hours';
 import { supabase } from '@/lib/supabase';
 
 export type AttendanceRecord = {
@@ -8,13 +9,7 @@ export type AttendanceRecord = {
   clock_in_time: string;
 };
 
-function getLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
 
-  return `${year}-${month}-${day}`;
-}
 
 async function getCurrentCoordinates() {
   const permission = await Location.requestForegroundPermissionsAsync();
@@ -105,7 +100,7 @@ export function useAttendance(employeeId: string) {
           clock_in_time: now.toISOString(),
           clock_in_lat: coordinates.latitude,
           clock_in_lng: coordinates.longitude,
-          date: getLocalDate(now),
+          date: getBusinessDateKey(now),
         })
         .select('id, clock_in_time')
         .single<AttendanceRecord>();

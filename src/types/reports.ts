@@ -1,7 +1,7 @@
 import type { AttendanceCoordinates } from '@/types/attendance';
 import type { EmployeeProfile } from '@/types/tasks';
 
-export type ReportView = 'weekly' | 'monthly';
+export type ReportView = 'weekly' | 'monthly' | 'yearly';
 
 export type ReportAttendance = {
   id: string;

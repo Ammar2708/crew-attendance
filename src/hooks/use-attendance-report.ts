@@ -38,23 +38,23 @@ type ReportRange = {
   key: string;
 };
 
-function getReportRange(view: ReportView): ReportRange {
-  const endDate = getBusinessDateKey(new Date());
-  const startDate =
-    view === 'weekly' ? addDaysToDateKey(endDate, -6) : `${endDate.slice(0, 8)}01`;
-  const taskStart = businessDateTimeToDate(startDate, 0);
-  const taskEnd = businessDateTimeToDate(addDaysToDateKey(endDate, 1), 0);
-
+export function getReportRange(view: ReportView, anchorDate: string): ReportRange {
+  const today = getBusinessDateKey(new Date());
+  const startDate = view === 'weekly' ? addDaysToDateKey(anchorDate, -6)
+    : view === 'monthly' ? anchorDate.slice(0, 7) + '-01' : anchorDate.slice(0, 4) + '-01-01';
+  const [year, month] = anchorDate.split('-').map(Number);
+  const periodEnd = view === 'weekly' ? anchorDate
+    : view === 'monthly' ? new Date(Date.UTC(year, month, 0, 12)).toISOString().slice(0, 10)
+    : year + '-12-31';
+  const endDate = periodEnd < today ? periodEnd : today;
   return {
-    startDate,
-    endDate,
-    taskStart: taskStart.toISOString(),
-    taskEnd: taskEnd.toISOString(),
-    label:
-      view === 'weekly'
-        ? `${formatBusinessDateKey(startDate, { month: 'short', day: 'numeric' })} – ${formatBusinessDateKey(endDate, { month: 'short', day: 'numeric', year: 'numeric' })}`
-        : formatBusinessDateKey(endDate, { month: 'long', year: 'numeric' }),
-    key: `${view}:${startDate}:${endDate}`,
+    startDate, endDate,
+    taskStart: businessDateTimeToDate(startDate, 0).toISOString(),
+    taskEnd: businessDateTimeToDate(addDaysToDateKey(endDate, 1), 0).toISOString(),
+    label: view === 'weekly'
+      ? formatBusinessDateKey(startDate, { month: 'short', day: 'numeric' }) + ' ? ' + formatBusinessDateKey(endDate, { month: 'short', day: 'numeric', year: 'numeric' })
+      : formatBusinessDateKey(startDate, view === 'monthly' ? { month: 'long', year: 'numeric' } : { year: 'numeric' }),
+    key: view + ':' + startDate + ':' + endDate,
   };
 }
 
@@ -212,8 +212,8 @@ function buildReport(
   };
 }
 
-export function useAttendanceReport(employeeId: string, view: ReportView) {
-  const range = useMemo(() => getReportRange(view), [view]);
+export function useAttendanceReport(employeeId: string, view: ReportView, anchorDate: string) {
+  const range = useMemo(() => getReportRange(view, anchorDate), [view, anchorDate]);
   const [report, setReport] = useState<AttendanceReport | null>(null);
   const [loadedRangeKey, setLoadedRangeKey] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);

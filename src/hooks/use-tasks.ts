@@ -1,19 +1,14 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 
+import { getBusinessDateKey } from '@/lib/work-hours';
 import { supabase } from '@/lib/supabase';
 import type { ClockedInEmployeeLocation, EmployeeProfile, Task } from '@/types/tasks';
 
 const TASK_FIELDS =
   'id, title, site_address, assigned_to, assigned_by, status, due_date, created_at';
 
-function getLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
 
-  return `${year}-${month}-${day}`;
-}
 
 function fetchEmployeeTasks(userId: string) {
   return supabase
@@ -108,7 +103,7 @@ function fetchOwnerData() {
     supabase
       .from('attendance')
       .select('employee_id, clock_in_time, clock_in_lat, clock_in_lng')
-      .eq('date', getLocalDate(new Date()))
+      .eq('date', getBusinessDateKey(new Date()))
       .is('clock_out_time', null)
       .order('clock_in_time', { ascending: false })
       .returns<ClockedInEmployeeLocation[]>(),

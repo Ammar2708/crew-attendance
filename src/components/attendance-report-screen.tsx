@@ -26,6 +26,8 @@ import { useAttendanceReport } from '@/hooks/use-attendance-report';
 import {
   BUSINESS_TIMEZONE,
   formatBusinessDateKey,
+  getBusinessDateKey,
+  addDaysToDateKey,
   LATE_GRACE_MINUTES,
   WORK_START_HOUR,
 } from '@/lib/work-hours';
@@ -83,6 +85,7 @@ function ViewToggle({ value, onChange }: { value: ReportView; onChange: (view: R
       options={[
         { value: 'weekly', label: 'Weekly' },
         { value: 'monthly', label: 'Monthly' },
+        { value: 'yearly', label: 'Yearly' },
       ]}
       value={value}
     />
@@ -189,7 +192,7 @@ function CompletedTasksSection({
                         </Pressable>
                       ) : null}
                       <Text style={styles.photoTimeLabel}>
-                        {formatPhotoTime(photo.capturedAt, view === 'monthly')}
+                        {formatPhotoTime(photo.capturedAt, view !== 'weekly')}
                       </Text>
                       {photo.source === 'gallery' ? (
                         <Text style={styles.photoSourceLabel}>Gallery</Text>
@@ -388,8 +391,31 @@ function DayRow({ day }: { day: ReportDay }) {
 
 export function AttendanceReportScreen({ employeeId }: { employeeId: string }) {
   const [view, setView] = useState<ReportView>('weekly');
+  const [anchorDate, setAnchorDate] = useState(() => getBusinessDateKey(new Date()));
+  const [isExporting, setIsExporting] = useState(false);
   const [activePhoto, setActivePhoto] = useState<ActivePhoto | null>(null);
-  const { report, isLoading, errorMessage, reload } = useAttendanceReport(employeeId, view);
+  const { report, isLoading, errorMessage, reload } = useAttendanceReport(employeeId, view, anchorDate);
+
+  function movePeriod(direction: number) {
+    const [year, month] = anchorDate.split('-').map(Number);
+    const next = view === 'weekly' ? addDaysToDateKey(anchorDate, direction * 7)
+      : new Date(Date.UTC(year + (view === 'yearly' ? direction : 0), month - 1 + (view === 'monthly' ? direction : 0), 1, 12)).toISOString().slice(0, 10);
+    const today = getBusinessDateKey(new Date());
+    setAnchorDate(next > today ? today : next);
+  }
+
+  async function exportReport() {
+    if (!report || isExporting) return;
+    setIsExporting(true);
+    try {
+      const { downloadAttendanceReport } = await import('@/lib/report-export');
+      await downloadAttendanceReport(report);
+    } catch (error) {
+      Alert.alert('Download failed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -425,10 +451,15 @@ export function AttendanceReportScreen({ employeeId }: { employeeId: string }) {
               <Text style={styles.period}>{report.periodLabel}</Text>
               <Text style={styles.reportNote}>
                 Late means after {WORK_START_HOUR}:00 AM
-                {LATE_GRACE_MINUTES > 0 ? ` plus ${LATE_GRACE_MINUTES} minutes` : ''}. Monthly
-                reports are month to date. Times use {BUSINESS_TIMEZONE}.
+                {LATE_GRACE_MINUTES > 0 ? ` plus ${LATE_GRACE_MINUTES} minutes` : ''}. Current periods run up to today. Times use {BUSINESS_TIMEZONE}.
               </Text>
               <ViewToggle onChange={setView} value={view} />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginVertical: 16 }}>
+                <Pressable accessibilityRole="button" onPress={() => movePeriod(-1)} style={styles.retryButton}><Text style={styles.retryText}>Previous {view === 'weekly' ? 'week' : view === 'monthly' ? 'month' : 'year'}</Text></Pressable>
+                <Pressable accessibilityRole="button" onPress={() => movePeriod(1)} style={styles.retryButton}><Text style={styles.retryText}>Next</Text></Pressable>
+                <Pressable accessibilityRole="button" onPress={() => setAnchorDate(getBusinessDateKey(new Date()))} style={styles.retryButton}><Text style={styles.retryText}>Current</Text></Pressable>
+                <Pressable accessibilityRole="button" disabled={isExporting} onPress={() => void exportReport()} style={styles.retryButton}><Text style={styles.retryText}>{isExporting ? 'Preparing?' : 'Download CSV'}</Text></Pressable>
+              </View>
               <Summary report={report} />
               <CompletedTasksSection
                 onOpenPhoto={(task, photo) => setActivePhoto({ taskTitle: task.title, photo })}

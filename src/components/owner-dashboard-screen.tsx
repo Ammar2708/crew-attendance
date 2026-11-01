@@ -1,3 +1,4 @@
+import { BUSINESS_TIMEZONE } from '@/lib/work-hours';
 import { router, type Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -16,7 +17,7 @@ import type { EmployeeDashboardRow, OwnerDashboardSummary } from '@/types/dashbo
 
 function formatTime(value: string | null, fallback: string) {
   if (!value) return fallback;
-  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return new Date(value).toLocaleTimeString([], { timeZone: BUSINESS_TIMEZONE, hour: 'numeric', minute: '2-digit' });
 }
 
 function Summary({ summary }: { summary: OwnerDashboardSummary }) {
@@ -93,7 +94,7 @@ function EmployeeRow({ row }: { row: EmployeeDashboardRow }) {
       <View style={styles.rowActions}>
         <Text style={styles.detailLink}>Open today&apos;s ledger →</Text>
         <Pressable
-          accessibilityHint={`Shows weekly and monthly reports for ${row.employee.full_name}`}
+          accessibilityHint={`Shows weekly, monthly and yearly reports for ${row.employee.full_name}`}
           accessibilityRole="button"
           onPress={(event) => {
             event.stopPropagation();
@@ -155,7 +156,7 @@ export function OwnerDashboardScreen() {
                   <Text style={styles.pageTitle}>Site ledger</Text>
                   <Text style={styles.date}>
                     {new Date().toLocaleDateString([], {
-                      weekday: 'long',
+                      timeZone: BUSINESS_TIMEZONE, weekday: 'long',
                       month: 'long',
                       day: 'numeric',
                     })}

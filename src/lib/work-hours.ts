@@ -1,6 +1,6 @@
 export const WORK_START_HOUR = 8;
 export const WORK_END_HOUR = 17;
-export const BUSINESS_TIMEZONE = 'Asia/Karachi';
+export const BUSINESS_TIMEZONE = 'Europe/London';
 export const LATE_GRACE_MINUTES = 0;
 
 const MILLISECONDS_PER_HOUR = 3_600_000;

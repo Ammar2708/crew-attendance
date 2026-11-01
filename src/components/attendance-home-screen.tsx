@@ -1,3 +1,4 @@
+import { BUSINESS_TIMEZONE } from '@/lib/work-hours';
 import type { Session } from '@supabase/supabase-js';
 import { router, type Href } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -29,11 +30,11 @@ const TASKS_ROUTE = '/tasks' as Href;
 const DASHBOARD_ROUTE = '/dashboard' as Href;
 
 function formatTime(date: Date) {
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  return date.toLocaleTimeString([], { timeZone: BUSINESS_TIMEZONE, hour: 'numeric', minute: '2-digit', second: '2-digit' });
 }
 
 function formatShortTime(value: string) {
-  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return new Date(value).toLocaleTimeString([], { timeZone: BUSINESS_TIMEZONE, hour: 'numeric', minute: '2-digit' });
 }
 
 export function AttendanceHomeScreen({ session }: AttendanceHomeScreenProps) {
@@ -103,7 +104,7 @@ export function AttendanceHomeScreen({ session }: AttendanceHomeScreenProps) {
             <View style={[styles.ledgerPanel, isWide && styles.ledgerPanelWide]}>
               <Text style={styles.date}>
                 {now.toLocaleDateString([], {
-                  weekday: 'long',
+                  timeZone: BUSINESS_TIMEZONE, weekday: 'long',
                   month: 'long',
                   day: 'numeric',
                 })}
