@@ -458,7 +458,7 @@ export function AttendanceReportScreen({ employeeId }: { employeeId: string }) {
                 <Pressable accessibilityRole="button" onPress={() => movePeriod(-1)} style={styles.retryButton}><Text style={styles.retryText}>Previous {view === 'weekly' ? 'week' : view === 'monthly' ? 'month' : 'year'}</Text></Pressable>
                 <Pressable accessibilityRole="button" onPress={() => movePeriod(1)} style={styles.retryButton}><Text style={styles.retryText}>Next</Text></Pressable>
                 <Pressable accessibilityRole="button" onPress={() => setAnchorDate(getBusinessDateKey(new Date()))} style={styles.retryButton}><Text style={styles.retryText}>Current</Text></Pressable>
-                <Pressable accessibilityRole="button" disabled={isExporting} onPress={() => void exportReport()} style={styles.retryButton}><Text style={styles.retryText}>{isExporting ? 'Preparing?' : 'Download CSV'}</Text></Pressable>
+                <Pressable accessibilityRole="button" disabled={isExporting} onPress={() => void exportReport()} style={styles.retryButton}><Text style={styles.retryText}>{isExporting ? 'Preparing PDF…' : 'Download PDF'}</Text></Pressable>
               </View>
               <Summary report={report} />
               <CompletedTasksSection
