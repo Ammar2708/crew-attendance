@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { groupCompletedTasksByDate } from '@/lib/completed-task-dates';
+
 import { LocationLink } from '@/components/location-link';
 import {
   FolderToggle,
@@ -149,60 +151,70 @@ function CompletedTasksSection({
         <Text style={styles.noCompletedTasks}>No tasks were completed in this period.</Text>
       ) : (
         <View style={styles.completedTaskList}>
-          {tasks.map((task) => (
-            <View key={task.id} style={styles.completedTaskCard}>
-              <View>
-                <Text style={styles.completedTaskTitle}>{task.title}</Text>
-                <Text style={styles.completedTaskAddress}>{task.siteAddress}</Text>
-              </View>
-              {task.photos.length > 0 ? (
-                <View style={styles.taskPhotoGrid}>
-                  {task.photos.map((photo, index) => (
-                    <View key={photo.id} style={styles.thumbnailColumn}>
-                      {photo.url ? (
-                        <LedgerPressable
-                          accessibilityHint={`Opens completion photo ${index + 1} for ${task.title}`}
-                          accessibilityRole="button"
-                          onPress={() => onOpenPhoto(task, photo)}
-                          style={styles.thumbnailButton}>
-                          <Image
-                            accessibilityLabel={`Completion photo ${index + 1} for ${task.title}`}
-                            contentFit="cover"
-                            source={{ uri: photo.url }}
-                            style={styles.thumbnail}
-                            transition={150}
-                          />
-                        </LedgerPressable>
-                      ) : (
-                        <View style={styles.photoUnavailable}>
-                          <Text style={styles.photoUnavailableText}>Photo unavailable</Text>
+          {groupCompletedTasksByDate(tasks, BUSINESS_TIMEZONE).map((group) => (
+            <View key={group.date} style={styles.completedDateGroup}>
+              <Text style={styles.completedDateHeading}>
+                {group.date === 'unknown' ? 'Completion date unavailable' : formatBusinessDateKey(group.date, {
+                  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+                })}
+                {' - '}{group.tasks.length} {group.tasks.length === 1 ? 'task' : 'tasks'}
+              </Text>
+              {group.tasks.map((task) => (
+                <View key={task.id} style={styles.completedTaskCard}>
+                  <View>
+                    <Text style={styles.completedTaskTitle}>{task.title}</Text>
+                    <Text style={styles.completedTaskAddress}>{task.siteAddress}</Text>
+                  </View>
+                  {task.photos.length > 0 ? (
+                    <View style={styles.taskPhotoGrid}>
+                      {task.photos.map((photo, index) => (
+                        <View key={photo.id} style={styles.thumbnailColumn}>
+                          {photo.url ? (
+                            <LedgerPressable
+                              accessibilityHint={`Opens completion photo ${index + 1} for ${task.title}`}
+                              accessibilityRole="button"
+                              onPress={() => onOpenPhoto(task, photo)}
+                              style={styles.thumbnailButton}>
+                              <Image
+                                accessibilityLabel={`Completion photo ${index + 1} for ${task.title}`}
+                                contentFit="cover"
+                                source={{ uri: photo.url }}
+                                style={styles.thumbnail}
+                                transition={150}
+                              />
+                            </LedgerPressable>
+                          ) : (
+                            <View style={styles.photoUnavailable}>
+                              <Text style={styles.photoUnavailableText}>Photo unavailable</Text>
+                            </View>
+                          )}
+                          {Platform.OS === 'web' && photo.url ? (
+                            <Pressable
+                              accessibilityLabel={`Download completion photo ${index + 1} for ${task.title}`}
+                              accessibilityRole="button"
+                              onPress={() => {
+                                void downloadPhotoInBrowser(photo.url!, photo.id).catch(() => {
+                                  Alert.alert('Download failed', 'Unable to save this picture. Please try again.');
+                                });
+                              }}
+                              style={({ pressed }) => [styles.webDownloadButton, pressed && styles.pressed]}>
+                              <Text style={styles.webDownloadButtonText}>Download</Text>
+                            </Pressable>
+                          ) : null}
+                          <Text style={styles.photoTimeLabel}>
+                            {formatPhotoTime(photo.capturedAt, view !== 'weekly')}
+                          </Text>
+                          {photo.source === 'gallery' ? (
+                            <Text style={styles.photoSourceLabel}>Gallery</Text>
+                          ) : null}
                         </View>
-                      )}
-                      {Platform.OS === 'web' && photo.url ? (
-                        <Pressable
-                          accessibilityLabel={`Download completion photo ${index + 1} for ${task.title}`}
-                          accessibilityRole="button"
-                          onPress={() => {
-                            void downloadPhotoInBrowser(photo.url!, photo.id).catch(() => {
-                              Alert.alert('Download failed', 'Unable to save this picture. Please try again.');
-                            });
-                          }}
-                          style={({ pressed }) => [styles.webDownloadButton, pressed && styles.pressed]}>
-                          <Text style={styles.webDownloadButtonText}>Download</Text>
-                        </Pressable>
-                      ) : null}
-                      <Text style={styles.photoTimeLabel}>
-                        {formatPhotoTime(photo.capturedAt, view !== 'weekly')}
-                      </Text>
-                      {photo.source === 'gallery' ? (
-                        <Text style={styles.photoSourceLabel}>Gallery</Text>
-                      ) : null}
-                    </View>
-                  ))}
+                      ))}
                 </View>
               ) : (
                 <Text style={styles.noTaskPhotos}>No completion photos</Text>
               )}
+            </View>
+              ))}
             </View>
           ))}
         </View>
@@ -528,6 +540,8 @@ const styles = StyleSheet.create({
     borderColor: Palette.line,
     padding: 16,
   },
+  completedDateGroup: { gap: 12 },
+  completedDateHeading: { color: Palette.ink, fontFamily: Fonts.sansSemiBold, fontSize: 15, marginTop: 16 },
   completedTaskList: { borderTopColor: Palette.line, borderTopWidth: 1 },
   completedTaskCard: {
     backgroundColor: Palette.surface,

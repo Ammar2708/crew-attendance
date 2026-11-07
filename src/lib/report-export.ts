@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 
+import { groupCompletedTasksByDate } from '@/lib/completed-task-dates';
+
 import { BUSINESS_TIMEZONE, LATE_GRACE_MINUTES, WORK_START_HOUR } from '@/lib/work-hours';
 import type { AttendanceReport } from '@/types/reports';
 
@@ -60,17 +62,18 @@ export async function attendanceReportPdf(report: AttendanceReport) {
   });
   autoTable(pdf, {
     startY: tableEnd() + 8, margin: { top: 20, left: 16, right: 16, bottom: 22 },
-    head: [['Completed task', 'Site address', 'Photo capture time']],
+    head: [['Completion date', 'Completed task', 'Site address', 'Photo capture time']],
     body: report.completedTasks.length
-      ? report.completedTasks.map(task => [
+      ? groupCompletedTasksByDate(report.completedTasks, BUSINESS_TIMEZONE).flatMap(group => group.tasks.map(task => [
+        group.date === 'unknown' ? 'Unavailable' : group.date,
         task.title,
         task.siteAddress,
         task.photos.map(photo => new Date(photo.capturedAt).toLocaleString('en-GB', {
           timeZone: BUSINESS_TIMEZONE, day: '2-digit', month: 'short', year: 'numeric',
           hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
         })).join('\n') || 'No photos',
-      ])
-      : [['No tasks were completed in this period.', '—', '']],
+      ]))
+      : [['', 'No tasks were completed in this period.', '', '']],
     styles: { fontSize: 9, cellPadding: 3, textColor: ink, overflow: 'linebreak' },
     headStyles: { fillColor: ink }, alternateRowStyles: { fillColor: [243, 246, 249] }, rowPageBreak: 'avoid',
   });

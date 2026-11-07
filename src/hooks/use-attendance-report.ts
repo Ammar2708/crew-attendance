@@ -183,6 +183,8 @@ function buildReport(
         id: task.id,
         title: firstPhoto?.task.title ?? task.title,
         siteAddress: firstPhoto?.task.site_address ?? task.site_address,
+        completedAt: taskPhotos.reduce<string | null>((latest, photo) =>
+          !latest || photo.uploaded_at > latest ? photo.uploaded_at : latest, null),
         photos: taskPhotos.map((photo) => ({
           id: photo.id,
           url: signedPhotoUrls.get(photo.photo_url) ?? null,

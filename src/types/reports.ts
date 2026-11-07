@@ -38,6 +38,7 @@ export type ReportCompletedTask = {
   id: string;
   title: string;
   siteAddress: string;
+  completedAt: string | null;
   photos: ReportCompletedTaskPhoto[];
 };
 
