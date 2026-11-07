@@ -99,7 +99,7 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
         photo_url,
         source,
         uploaded_at,
-        captured_at:uploaded_at,
+        captured_at,
         task:tasks!inner(id, title, site_address, assigned_to, status, created_at)
       `)
       .eq('task.assigned_to', employeeId)
@@ -190,7 +190,7 @@ function buildReport(
           id: photo.id,
           url: signedPhotoUrls.get(photo.photo_url) ?? null,
           source: photo.source,
-          capturedAt: photo.captured_at,
+          capturedAt: photo.captured_at ?? photo.uploaded_at,
         })),
       };
     });

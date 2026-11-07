@@ -60,10 +60,17 @@ export async function attendanceReportPdf(report: AttendanceReport) {
   });
   autoTable(pdf, {
     startY: tableEnd() + 8, margin: { top: 20, left: 16, right: 16, bottom: 22 },
-    head: [['Completed task', 'Site address']],
+    head: [['Completed task', 'Site address', 'Photo capture time']],
     body: report.completedTasks.length
-      ? report.completedTasks.map(task => [task.title, task.siteAddress])
-      : [['No tasks were completed in this period.', '—']],
+      ? report.completedTasks.map(task => [
+        task.title,
+        task.siteAddress,
+        task.photos.map(photo => new Date(photo.capturedAt).toLocaleString('en-GB', {
+          timeZone: BUSINESS_TIMEZONE, day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+        })).join('\n') || 'No photos',
+      ])
+      : [['No tasks were completed in this period.', '—', '']],
     styles: { fontSize: 9, cellPadding: 3, textColor: ink, overflow: 'linebreak' },
     headStyles: { fillColor: ink }, alternateRowStyles: { fillColor: [243, 246, 249] }, rowPageBreak: 'avoid',
   });

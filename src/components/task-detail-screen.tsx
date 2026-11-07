@@ -1,11 +1,10 @@
 import { CameraView, type CameraCapturedPicture, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
-import { createElement, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,7 +31,7 @@ type SelectedPhoto = {
   id: string;
   uri: string;
   capturedAt: string;
-  source: 'camera' | 'gallery';
+  source: 'camera';
   format?: CameraCapturedPicture['format'];
   contentType?: string;
 };
@@ -76,7 +75,6 @@ function getUploadMetadata(photo: SelectedPhoto) {
 export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
   const { task, isLoading, errorMessage: taskError, markCompleted } = useTask(taskId, userId);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const isWeb = Platform.OS === 'web';
   const cameraRef = useRef<CameraView>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
@@ -92,22 +90,21 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    if (isWeb) {
-      setErrorMessage('Use the mobile app to take completion photos.');
-      return;
-    }
+    try {
+      const response = cameraPermission?.granted
+        ? cameraPermission
+        : await requestCameraPermission();
+      if (!response.granted) {
+        setPermissionIssue({ canAskAgain: response.canAskAgain });
+        return;
+      }
 
-    const response = cameraPermission?.granted
-      ? cameraPermission
-      : await requestCameraPermission();
-    if (!response.granted) {
-      setPermissionIssue({ canAskAgain: response.canAskAgain });
-      return;
+      setPermissionIssue(null);
+      setIsCameraReady(false);
+      setIsCameraOpen(true);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to access the camera.');
     }
-
-    setPermissionIssue(null);
-    setIsCameraReady(false);
-    setIsCameraOpen(true);
   }
 
   async function capturePhoto() {
@@ -137,43 +134,8 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
     }
   }
 
-  function chooseGalleryPhotos() {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    document.getElementById('task-gallery-upload')?.click();
-  }
-
-  function chooseCameraPhoto() {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    document.getElementById('task-camera-upload')?.click();
-  }
-
-  function handleWebPhotoSelection(
-    event: React.ChangeEvent<HTMLInputElement>,
-    source: 'camera' | 'gallery',
-  ) {
-    const files = Array.from(event.currentTarget.files ?? []);
-    const selectedAt = new Date().toISOString();
-    setPhotos((current) => [
-      ...current,
-      ...files.map((file) => ({
-        id: createSelectedPhotoId(),
-        uri: URL.createObjectURL(file),
-        capturedAt: selectedAt,
-        source,
-        contentType: file.type || undefined,
-      })),
-    ]);
-    event.currentTarget.value = '';
-  }
-
   function removePhoto(photoId: string) {
-    setPhotos((current) => {
-      const photo = current.find((item) => item.id === photoId);
-      if (photo?.source === 'gallery') URL.revokeObjectURL(photo.uri);
-      return current.filter((item) => item.id !== photoId);
-    });
+    setPhotos((current) => current.filter((item) => item.id !== photoId));
   }
 
   async function submitPhotos() {
@@ -187,7 +149,8 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
       const photoRows: {
         task_id: string;
         photo_url: string;
-        source: 'camera' | 'gallery';
+        source: 'camera';
+        captured_at: string;
       }[] = [];
 
       for (const photo of photos) {
@@ -212,6 +175,7 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
           task_id: task.id,
           photo_url: uploadData.path,
           source: photo.source,
+          captured_at: photo.capturedAt,
         });
       }
 
@@ -231,9 +195,6 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
 
       markCompleted();
       const submittedPhotoCount = photos.length;
-      photos.forEach((photo) => {
-        if (photo.source === 'gallery') URL.revokeObjectURL(photo.uri);
-      });
       setPhotos([]);
       setJustCompleted(true);
       setSuccessMessage(
@@ -261,7 +222,10 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
           facing="back"
           mode="picture"
           onCameraReady={() => setIsCameraReady(true)}
-          onMountError={({ message }) => setErrorMessage(message)}
+          onMountError={({ message }) => {
+            setErrorMessage(message);
+            setIsCameraOpen(false);
+          }}
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
         />
@@ -292,28 +256,6 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {isWeb
-          ? createElement('input', {
-              accept: 'image/*',
-              id: 'task-gallery-upload',
-              multiple: true,
-              onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-                handleWebPhotoSelection(event, 'gallery'),
-              style: { display: 'none' },
-              type: 'file',
-            })
-          : null}
-        {isWeb
-          ? createElement('input', {
-              accept: 'image/*',
-              capture: 'environment',
-              id: 'task-camera-upload',
-              onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-                handleWebPhotoSelection(event, 'camera'),
-              style: { display: 'none' },
-              type: 'file',
-            })
-          : null}
         {isLoading ? (
           <ActivityIndicator color={Palette.safety} size="large" />
         ) : taskError || !task ? (
@@ -363,29 +305,12 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
                   ))}
                 </View>
                 <View style={styles.addPhotoActions}>
-                  {isWeb ? (
-                    <>
-                      <Pressable
-                        disabled={isSubmitting}
-                        onPress={chooseCameraPhoto}
-                        style={[styles.primaryButton, styles.addPhotoButton]}>
-                        <Text style={styles.primaryButtonText}>Take photo</Text>
-                      </Pressable>
-                      <Pressable
-                        disabled={isSubmitting}
-                        onPress={chooseGalleryPhotos}
-                        style={[styles.primaryButton, styles.addPhotoButton]}>
-                        <Text style={styles.primaryButtonText}>Choose from gallery</Text>
-                      </Pressable>
-                    </>
-                  ) : (
-                    <Pressable
-                      disabled={isSubmitting}
-                      onPress={() => void openCamera()}
-                      style={[styles.primaryButton, styles.addPhotoButton]}>
-                      <Text style={styles.primaryButtonText}>Take photo</Text>
-                    </Pressable>
-                  )}
+                  <Pressable
+                    disabled={isSubmitting}
+                    onPress={() => void openCamera()}
+                    style={[styles.primaryButton, styles.addPhotoButton]}>
+                    <Text style={styles.primaryButtonText}>Take photo</Text>
+                  </Pressable>
                 </View>
                 <Pressable
                   disabled={isSubmitting}
@@ -408,19 +333,6 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
               <View style={styles.completedMessage}>
                 <CheckmarkDraw animate={justCompleted} />
                 <Text style={styles.completedMessageText}>This task is completed.</Text>
-              </View>
-            ) : isWeb ? (
-              <View style={styles.photoSourceActions}>
-                <Pressable
-                  onPress={chooseCameraPhoto}
-                  style={[styles.primaryButton, styles.photoSourceButton]}>
-                  <Text style={styles.primaryButtonText}>Take photo</Text>
-                </Pressable>
-                <Pressable
-                  onPress={chooseGalleryPhotos}
-                  style={[styles.primaryButton, styles.photoSourceButton]}>
-                  <Text style={styles.primaryButtonText}>Choose from gallery</Text>
-                </Pressable>
               </View>
             ) : (
               <View style={styles.photoSourceActions}>
