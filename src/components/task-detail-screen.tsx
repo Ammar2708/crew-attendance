@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import {
 import { Fonts, Palette, Radius } from '@/constants/theme';
 import { useTask } from '@/hooks/use-tasks';
 import { supabase } from '@/lib/supabase';
+import { isMissingCaptureTimeColumn, photoSubmissionErrorMessage } from '@/lib/task-photo-errors';
 
 type TaskDetailScreenProps = {
   taskId: string;
@@ -154,17 +156,25 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
       }[] = [];
 
       for (const photo of photos) {
-        const fileResponse = await fetch(photo.uri);
-        if (!fileResponse.ok) throw new Error('Unable to read one of the captured photos.');
+        let photoData: ArrayBuffer;
+        if (Platform.OS === 'web') {
+          const response = await fetch(photo.uri);
+          if (!response.ok) throw new Error('Unable to read one of the captured photos.');
+          photoData = await response.arrayBuffer();
+        } else {
+          const { File } = await import('expo-file-system');
+          photoData = await new File(photo.uri).arrayBuffer();
+        }
+        if (photoData.byteLength === 0) throw new Error('The captured photo is empty. Please take it again.');
 
         const metadata = getUploadMetadata(photo);
         const contentType = photo.contentType || metadata.contentType;
         const extension = metadata.extension;
-        const filename = `task-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`;
+        const filename = `capture-${new Date(photo.capturedAt).getTime()}-${Math.random().toString(36).slice(2, 9)}.${extension}`;
         const objectPath = `${task.id}/${filename}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('task-photos')
-          .upload(objectPath, await fileResponse.arrayBuffer(), {
+          .upload(objectPath, photoData, {
             contentType,
             upsert: false,
           });
@@ -179,8 +189,12 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
         });
       }
 
-      const { error: photoError } = await supabase.from('task_photos').insert(photoRows);
-
+      let { error: photoError } = await supabase.from('task_photos').insert(photoRows);
+      if (isMissingCaptureTimeColumn(photoError)) {
+        // Retry only a schema rejection, which cannot have inserted any rows.
+        const legacyRows = photoRows.map(({ task_id, photo_url, source }) => ({ task_id, photo_url, source }));
+        ({ error: photoError } = await supabase.from('task_photos').insert(legacyRows));
+      }
       if (photoError) throw photoError;
 
       const { error: updateError } = await supabase
@@ -201,15 +215,19 @@ export function TaskDetailScreen({ taskId, userId }: TaskDetailScreenProps) {
         `${submittedPhotoCount} ${submittedPhotoCount === 1 ? 'photo' : 'photos'} submitted and task marked completed.`,
       );
     } catch (error) {
+      setErrorMessage(photoSubmissionErrorMessage(error));
       if (uploadedPaths.length > 0) {
-        await supabase
-          .from('task_photos')
-          .delete()
-          .eq('task_id', task.id)
-          .in('photo_url', uploadedPaths);
-        await supabase.storage.from('task-photos').remove(uploadedPaths);
+        try {
+          await supabase
+            .from('task_photos')
+            .delete()
+            .eq('task_id', task.id)
+            .in('photo_url', uploadedPaths);
+          await supabase.storage.from('task-photos').remove(uploadedPaths);
+        } catch {
+          // Preserve the submission error and keep the captured photos for retry.
+        }
       }
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to submit the photos.');
     } finally {
       setIsSubmitting(false);
     }

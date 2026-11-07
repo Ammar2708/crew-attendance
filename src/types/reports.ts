@@ -29,7 +29,7 @@ export type ReportTaskPhoto = {
   task_id: string;
   photo_url: string;
   source: 'camera' | 'gallery';
-  captured_at: string;
+  captured_at?: string | null;
   uploaded_at: string;
   task: ReportTask;
 };
