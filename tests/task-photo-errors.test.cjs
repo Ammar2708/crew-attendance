@@ -34,3 +34,33 @@ test('retains capture time on both current and legacy database schemas', () => {
   assert.equal(photoCaptureTime({ ...photo, captured_at: null }), captured);
   assert.equal(photoCaptureTime({ ...photo, photo_url: 'task/task-123-abc.jpg' }), uploaded);
 });
+
+const { withCaptureTimeFallback } = exported;
+
+test('report retries the screenshot missing-column error without requesting captured_at', async () => {
+  const calls = [];
+  const photos = [{ photo_url: 'task/old.jpg', uploaded_at: '2026-11-07T16:35:00.000Z' }];
+  const result = await withCaptureTimeFallback(async includeCaptureTime => {
+    calls.push(includeCaptureTime);
+    return includeCaptureTime
+      ? { data: null, error: { code: '42703', message: 'column task_photos.captured_at does not exist' } }
+      : { data: photos, error: null };
+  });
+  assert.deepEqual(calls, [true, false]);
+  assert.equal(result.data, photos);
+  assert.equal(photoCaptureTime(result.data[0]), photos[0].uploaded_at);
+});
+
+test('report uses capture column when available and does not retry unrelated errors', async () => {
+  for (const result of [
+    { data: [{ captured_at: '2026-11-07T16:30:00.000Z' }], error: null },
+    { data: null, error: { code: '42501', message: 'Permission denied' } },
+  ]) {
+    const calls = [];
+    assert.equal(await withCaptureTimeFallback(async includeCaptureTime => {
+      calls.push(includeCaptureTime);
+      return result;
+    }), result);
+    assert.deepEqual(calls, [true]);
+  }
+});

@@ -24,3 +24,11 @@ export function photoCaptureTime(photo: {
   const timestamp = photo.photo_url.match(/(?:^|\/)capture-(\d{13})-/)?.[1];
   return photo.captured_at ?? (timestamp ? new Date(Number(timestamp)).toISOString() : photo.uploaded_at);
 }
+
+// A missing column can also be reported by a database whose schema cache is stale.
+export async function withCaptureTimeFallback<T extends { error: unknown }>(
+  query: (includeCaptureTime: boolean) => PromiseLike<T>,
+): Promise<T> {
+  const result = await query(true);
+  return isMissingCaptureTimeColumn(result.error) ? await query(false) : result;
+}

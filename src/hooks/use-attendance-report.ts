@@ -2,7 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
-import { photoCaptureTime } from '@/lib/task-photo-errors';
+import { photoCaptureTime, withCaptureTimeFallback } from '@/lib/task-photo-errors';
 import {
   addDaysToDateKey,
   BUSINESS_TIMEZONE,
@@ -92,10 +92,11 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
       .lt('created_at', range.taskEnd)
       .order('created_at', { ascending: false })
       .returns<ReportTask[]>(),
-    supabase
+    withCaptureTimeFallback((includeCaptureTime) => supabase
       .from('task_photos')
       .select(`
-        *,
+        id, task_id, photo_url, source, uploaded_at,
+        ${includeCaptureTime ? 'captured_at,' : ''}
         task:tasks!inner(id, title, site_address, assigned_to, status, created_at)
       `)
       .eq('task.assigned_to', employeeId)
@@ -103,7 +104,7 @@ async function fetchReportData(employeeId: string, range: ReportRange) {
       .gte('task.created_at', range.taskStart)
       .lt('task.created_at', range.taskEnd)
       .order('uploaded_at', { ascending: false })
-      .returns<ReportTaskPhoto[]>(),
+      .returns<ReportTaskPhoto[]>()),
   ]);
 
   const photoPaths = [...new Set((photosResult.data ?? []).map((photo) => photo.photo_url))];
